@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}GHOSTTRACE — Hunt Documentation{% endblock %}
+{% block content %}
+<div class="main-wrap">
+  <div class="label">// Stage 05 — Hunt Documentation</div>
+  <h1>Hunt Document</h1>
+  <p>Complete your hunt documentation below. This has been partially populated from your investigation. Review, expand, and add your own observations before submitting for final AI assessment.</p>
+
+  <form method="POST">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;">
+
+      <div>
+        <h2>Hunt Metadata</h2>
+        <div class="form-group">
+          <label>Hunt Title</label>
+          <input type="text" name="hunt_title" value="{{ doc.hunt_title or '' }}" placeholder="{{ profile.display_name }} Threat Hunt"/>
+        </div>
+        <div class="form-group">
+          <label>Analyst Name</label>
+          <input type="text" name="analyst_name" value="{{ doc.analyst_name or current_user.username }}"/>
+        </div>
+
+        <h2>Executive Summary</h2>
+        <div class="form-group">
+          <label>Summary of Hunt and Findings</label>
+          <textarea name="executive_summary" rows="6" placeholder="Summarise the hunt scope, methodology, key findings, and overall determination...">{{ doc.executive_summary or '' }}</textarea>
+        </div>
+
+        <h2>Data Sources</h2>
+        <div class="form-group">
+          <label>Telemetry Sources Used</label>
+          <textarea name="data_sources" rows="4" placeholder="List the Splunk sourcetypes, indexes, and data sources consulted during this investigation...">{{ doc.data_sources or '' }}</textarea>
+        </div>
+
+        <h2>Visibility Gaps</h2>
+        <div class="form-group">
+          <label>Gaps Identified</label>
+          <textarea name="visibility_gaps" rows="4" placeholder="What telemetry was missing? What would have improved detection capability?...">{{ doc.visibility_gaps or '' }}</textarea>
+        </div>
+      </div>
+
+      <div>
+        <h2>Attack Timeline</h2>
+        <div class="form-group">
+          <label>Chronological Event Timeline</label>
+          <textarea name="timeline" rows="8" placeholder="List key events in chronological order with timestamps, hosts, and significance...">{{ doc.timeline or '' }}</textarea>
+        </div>
+
+        <h2>Confirmed TTPs</h2>
+        <div class="form-group">
+          <label>ATT&CK Techniques Observed</label>
+          <textarea name="confirmed_ttps" rows="5" placeholder="List each confirmed technique with ID, name, and brief evidence summary...">{{ doc.confirmed_ttps or '' }}</textarea>
+        </div>
+
+        <h2>Detection Rules</h2>
+        <div class="form-group">
+          <label>Recommended Detection Logic</label>
+          <textarea name="detection_rules" rows="5" placeholder="SPL queries or Sigma rules that would detect this activity in future...">{{ doc.detection_rules or '' }}</textarea>
+        </div>
+
+        <h2>Recommendations</h2>
+        <div class="form-group">
+          <label>Follow-on Actions and Escalation</label>
+          <textarea name="recommendations" rows="5" placeholder="What should be escalated to IR? What hardening is recommended? What follow-on hunts should be conducted?...">{{ doc.recommendations or '' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:2rem;display:flex;gap:1rem;align-items:center;flex-wrap:wrap;">
+      <button type="submit" name="save" class="btn btn-secondary">Save Draft</button>
+      <button type="submit" name="submit_final" value="1" class="btn btn-primary">Submit for Final Assessment →</button>
+      <span style="font-family:'Share Tech Mono',monospace;font-size:0.65rem;color:var(--grey);margin-left:auto;">Final submission uses 2 AI assessment calls</span>
+    </div>
+  </form>
+
+  {% if session.answers %}
+  <h2 style="margin-top:3rem;">Investigation Summary</h2>
+  <table>
+    <thead>
+      <tr><th>Phase</th><th>Question</th><th>Score</th></tr>
+    </thead>
+    <tbody>
+      {% for a in session.answers %}
+      <tr>
+        <td><span class="phase-badge phase-{{ a.phase }}">{{ a.phase }}</span></td>
+        <td style="font-size:0.82rem;">{{ a.question_text[:80] }}...</td>
+        <td>
+          {% if a.score is not none %}
+          <span class="mono {% if a.score >= 7 %}score-high{% elif a.score >= 5 %}score-mid{% else %}score-low{% endif %}">{{ '%.1f'|format(a.score) }}</span>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

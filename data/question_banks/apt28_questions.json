@@ -1,0 +1,263 @@
+[
+  {
+    "id": "apt28_plan_01",
+    "phase": "plan",
+    "order": 1,
+    "question": "Based on your threat intelligence research, what behaviour are you hunting for and in what environment? Define your hunt scope for this APT28 investigation.",
+    "requires_spl": false,
+    "expected_elements": [
+      "endpoint environment mentioned",
+      "spearphishing or initial access referenced",
+      "credential theft or lateral movement mentioned",
+      "specific APT28 behaviour identified from research"
+    ],
+    "hint_context": "APT28 is primarily an endpoint-focused threat actor. Think about how they gain initial access and what they do once inside."
+  },
+  {
+    "id": "apt28_plan_02",
+    "phase": "plan",
+    "order": 2,
+    "question": "What data sources will you prioritise in this investigation and why? List the relevant Splunk sourcetypes and event IDs most significant to APT28 tradecraft.",
+    "requires_spl": false,
+    "expected_elements": [
+      "Sysmon mentioned with specific event IDs",
+      "Windows Security Event Log mentioned",
+      "PowerShell logging mentioned",
+      "Event IDs 1 3 4624 4625 referenced",
+      "Reasoning provided for prioritisation"
+    ],
+    "hint_context": "APT28 operates almost exclusively on endpoints. Focus on process execution, authentication events, and PowerShell activity."
+  },
+  {
+    "id": "apt28_plan_03",
+    "phase": "plan",
+    "order": 3,
+    "question": "What does normal PowerShell and cmd.exe activity look like in a corporate environment versus what you would expect from APT28? What assumptions are you taking into this investigation?",
+    "requires_spl": false,
+    "expected_elements": [
+      "normal PowerShell baseline described",
+      "adversary deviations identified such as encoded commands or unusual parents",
+      "assumptions clearly stated",
+      "false positive risks considered"
+    ],
+    "hint_context": "Think about what makes adversary PowerShell stand out — parent processes, command line arguments, and timing are key differentiators."
+  },
+  {
+    "id": "apt28_exec_01",
+    "phase": "execute",
+    "order": 4,
+    "question": "Write an SPL query to identify suspicious PowerShell execution events in the ghosttrace_apt28 index. What process executed and what makes it suspicious?",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=1 queried",
+      "PowerShell identified in Image field",
+      "encoded command flag identified",
+      "suspicious parent process noted",
+      "evasion flags identified such as -NoP -NonI -W Hidden"
+    ],
+    "hint_context": "Search Sysmon EventID=1 for PowerShell. Look at the CommandLine field for -Enc, -NoP, -NonI, or -W Hidden flags."
+  },
+  {
+    "id": "apt28_exec_02",
+    "phase": "execute",
+    "order": 5,
+    "question": "Identify the file dropped to disk by the malicious process. Write an SPL query to find file creation events and describe what was created and where.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=11 queried",
+      "TargetFilename in suspicious location identified",
+      "Windows Temp or similar path noted",
+      "creating process identified",
+      "filename appears to masquerade as legitimate binary"
+    ],
+    "hint_context": "Search Sysmon EventID=11 for file creation events. Adversaries commonly drop payloads into Windows\\Temp or AppData directories."
+  },
+  {
+    "id": "apt28_exec_03",
+    "phase": "execute",
+    "order": 6,
+    "question": "Identify the C2 beaconing activity. Write an SPL query to find outbound network connections from the malicious process and describe the pattern observed.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=3 queried",
+      "destination IP and port 443 identified",
+      "destination hostname noted",
+      "multiple connections to same destination showing beaconing",
+      "process identified as source"
+    ],
+    "hint_context": "Use Sysmon EventID=3 to find network connections. Look for repeated connections to the same external IP or hostname — this regularity indicates beaconing."
+  },
+  {
+    "id": "apt28_exec_04",
+    "phase": "execute",
+    "order": 7,
+    "question": "Investigate the credential access activity. Write an SPL query to find LSASS memory access events and explain what the adversary was attempting.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=10 queried",
+      "TargetImage lsass.exe identified",
+      "GrantedAccess value noted",
+      "SourceImage identified as malicious",
+      "credential dumping objective identified"
+    ],
+    "hint_context": "Search Sysmon EventID=10 where TargetImage contains lsass.exe. The GrantedAccess value indicates what the process was trying to do with LSASS memory."
+  },
+  {
+    "id": "apt28_exec_05",
+    "phase": "execute",
+    "order": 8,
+    "question": "Investigate the authentication events. Write an SPL query to identify failed and successful logon events and describe what pattern you observe.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Windows Security EID 4625 queried for failed logons",
+      "Windows Security EID 4624 queried for successful logons",
+      "source IP identified",
+      "target accounts identified",
+      "credential spraying or brute force pattern identified"
+    ],
+    "hint_context": "Check Windows Security EID=4625 for failed logons and EID=4624 for successes. Multiple failures from the same IP followed by a success is a classic credential spray pattern."
+  },
+  {
+    "id": "apt28_exec_06",
+    "phase": "execute",
+    "order": 9,
+    "question": "Identify the persistence mechanism used. Write an SPL query to find registry run key modifications or scheduled task creation and describe what was configured.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=13 queried for registry",
+      "Run key path identified",
+      "Windows Security EID=4698 queried for scheduled tasks",
+      "persistence payload identified",
+      "T1547.001 or T1053.005 referenced"
+    ],
+    "hint_context": "Check Sysmon EventID=13 for registry modifications targeting Run keys, and Windows Security EID=4698 for scheduled task creation."
+  },
+  {
+    "id": "apt28_exec_07",
+    "phase": "execute",
+    "order": 10,
+    "question": "Identify any lateral movement activity. Write an SPL query to find evidence of the adversary moving to other hosts and describe the technique used.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=1 queried for lateral movement tools",
+      "psexec or wmi or similar tool identified",
+      "destination host identified",
+      "credentials used for movement noted",
+      "T1021.002 or T1021.003 referenced"
+    ],
+    "hint_context": "Look for Sysmon EventID=1 events where the CommandLine contains psexec, wmic, or references remote hosts using \\\\ notation."
+  },
+  {
+    "id": "apt28_exec_08",
+    "phase": "execute",
+    "order": 11,
+    "question": "Build a complete attack timeline from initial access through to persistence. List key events chronologically with timestamps and affected hosts.",
+    "requires_spl": false,
+    "expected_elements": [
+      "PowerShell execution identified as early activity",
+      "file drop placed in correct order",
+      "C2 beacon placed after execution",
+      "credential access placed in timeline",
+      "lateral movement placed correctly",
+      "persistence at end of chain",
+      "timestamps referenced",
+      "multiple hosts noted where applicable"
+    ],
+    "hint_context": "Sort all events you identified by their EventTime. Start with the initial PowerShell execution and build forward through each stage of the attack."
+  },
+  {
+    "id": "apt28_exec_09",
+    "phase": "execute",
+    "order": 12,
+    "question": "Is this a true positive? Justify your conclusion with specific evidence from the investigation.",
+    "requires_spl": false,
+    "expected_elements": [
+      "definitive true positive conclusion",
+      "encoded PowerShell cited as evidence",
+      "LSASS access cited",
+      "C2 beaconing cited",
+      "persistence mechanism cited",
+      "no legitimate business justification identified"
+    ],
+    "hint_context": "Consider each indicator together. Encoded PowerShell spawning from cmd.exe, accessing LSASS, and beaconing to an external host has no legitimate business explanation."
+  },
+  {
+    "id": "apt28_report_01",
+    "phase": "report",
+    "order": 13,
+    "question": "What is the confirmed scope of the intrusion? Which hosts, users, and systems were affected?",
+    "requires_spl": false,
+    "expected_elements": [
+      "affected endpoint hostname identified",
+      "lateral movement target identified if applicable",
+      "compromised user accounts identified",
+      "domain controller access assessed",
+      "overall scope characterised"
+    ],
+    "hint_context": "Review your timeline and identify every host and user account that was touched during the intrusion."
+  },
+  {
+    "id": "apt28_report_02",
+    "phase": "report",
+    "order": 14,
+    "question": "Map all confirmed activity to MITRE ATT&CK techniques. List the technique IDs and names with brief evidence summaries.",
+    "requires_spl": false,
+    "expected_elements": [
+      "T1566.001 Spearphishing Attachment referenced",
+      "T1059.001 PowerShell referenced",
+      "T1027 Obfuscated Files referenced",
+      "T1003.001 LSASS Memory referenced",
+      "T1071.001 Web Protocols C2 referenced",
+      "T1547.001 or T1053.005 persistence referenced",
+      "T1021 lateral movement referenced"
+    ],
+    "hint_context": "Go through each stage of the attack chain and map it to an ATT&CK technique. Use the technique IDs from your earlier research."
+  },
+  {
+    "id": "apt28_report_03",
+    "phase": "report",
+    "order": 15,
+    "question": "What visibility gaps did you identify? What additional telemetry would have improved detection capability?",
+    "requires_spl": false,
+    "expected_elements": [
+      "at least one gap identified",
+      "email telemetry mentioned as initial access visibility gap",
+      "DNS logging mentioned",
+      "PowerShell ScriptBlock logging mentioned",
+      "network traffic capture mentioned"
+    ],
+    "hint_context": "Think about where the attack chain had gaps in visibility. What would have helped you detect the initial access or the C2 channel earlier?"
+  },
+  {
+    "id": "apt28_report_04",
+    "phase": "report",
+    "order": 16,
+    "question": "Write an SPL detection query or Sigma rule to detect the encoded PowerShell execution technique observed. Explain the logic and any false positive considerations.",
+    "requires_spl": true,
+    "expected_elements": [
+      "EventID=1 used",
+      "CommandLine contains -Enc or EncodedCommand",
+      "PowerShell image targeted",
+      "evasion flags included in detection",
+      "logic explained",
+      "false positive considerations mentioned"
+    ],
+    "hint_context": "Focus on the combination of -Enc with evasion flags like -NonI and -W Hidden. What legitimate tools might trigger this detection?"
+  },
+  {
+    "id": "apt28_report_05",
+    "phase": "report",
+    "order": 17,
+    "question": "What are your recommended follow-on actions? What should be escalated to incident response and what additional hunting should be conducted?",
+    "requires_spl": false,
+    "expected_elements": [
+      "IR escalation recommended",
+      "host isolation mentioned",
+      "credential reset for affected accounts",
+      "follow-on hunt for additional compromised hosts",
+      "email gateway review mentioned",
+      "longer-term hardening recommended"
+    ],
+    "hint_context": "Think about immediate containment actions, credential hygiene, and what follow-on hunts would identify if the intrusion has spread further."
+  }
+]

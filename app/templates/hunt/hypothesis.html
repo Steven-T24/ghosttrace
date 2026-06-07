@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}GHOSTTRACE — Hypothesis{% endblock %}
+{% block content %}
+<div class="main-wrap">
+  <div class="label">// Stage 02 — Hypothesis Formation</div>
+  <h1>Hunt Hypothesis</h1>
+  <p>Based on your research, define your hunt hypothesis and map the ATT&CK techniques you expect to observe. Your hypothesis must be submitted to unlock the investigation stage.</p>
+
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:2rem;">
+    <div>
+      <form method="POST">
+        <h2>Hypothesis Statement</h2>
+        <div class="form-group">
+          <label>Hunt Hypothesis</label>
+          <textarea name="hypothesis" rows="7" required placeholder="I hypothesise that {{ profile.display_name }} has gained access to our environment via... and is conducting... based on their known tradecraft of...">{{ session.hypothesis_text or '' }}</textarea>
+        </div>
+
+        <h2>TTP Mapping</h2>
+        <div class="form-group">
+          <label>ATT&CK Technique IDs and Names</label>
+          <textarea name="ttp_mapping" rows="8" required placeholder="T1078.004 - Valid Accounts: Cloud Accounts&#10;T1530 - Data from Cloud Storage&#10;T1059.001 - PowerShell&#10;...">{{ session.ttp_mapping or '' }}</textarea>
+        </div>
+
+        <div class="callout" style="margin-bottom:1rem;">
+          Your hypothesis and TTP mapping will be assessed by AI as part of the final performance review. There are no API calls at this stage — just submit and proceed.
+        </div>
+
+        <div style="display:flex;gap:1rem;align-items:center;">
+          <button type="submit" class="btn btn-primary">Submit Hypothesis & Proceed →</button>
+          <a href="{{ url_for('hunt.research', session_id=session.id) }}" class="btn btn-secondary">← Back to Research</a>
+        </div>
+      </form>
+    </div>
+
+    <div>
+      {% if session.research_notes %}
+      <h2>Your Research Notes</h2>
+      <div class="card" style="font-family:'Share Tech Mono',monospace;font-size:0.78rem;color:var(--grey);white-space:pre-wrap;max-height:500px;overflow-y:auto;">{{ session.research_notes }}</div>
+      {% else %}
+      <div class="card">
+        <div class="label">// No Research Notes</div>
+        <p style="font-size:0.82rem;">You didn't save any research notes. Go back to the research page to add them if needed.</p>
+        <a href="{{ url_for('hunt.research', session_id=session.id) }}" class="btn btn-secondary" style="margin-top:0.5rem;display:inline-block;font-size:0.78rem;">← Back to Research</a>
+      </div>
+      {% endif %}
+
+      <div class="card" style="margin-top:1rem;">
+        <div class="label">// ATT&CK Reference</div>
+        <a href="https://attack.mitre.org/techniques/enterprise/" target="_blank" style="color:var(--cyan);font-size:0.82rem;">Enterprise Techniques →</a>
+      </div>
+
+      <form method="POST" action="{{ url_for('hunt.quit_hunt', session_id=session.id) }}" style="margin-top:1rem;" id="quit-form">
+        <button type="button" class="btn btn-danger" style="width:100%;" onclick="confirmQuit()">Abandon Hunt</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="quit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center;">
+  <div class="card" style="max-width:400px;width:90%;border-color:var(--red);">
+    <div class="label" style="color:var(--red);">// Confirm Abandon</div>
+    <p style="margin:1rem 0;">Are you sure you want to abandon this hunt? All progress will be lost.</p>
+    <div style="display:flex;gap:1rem;">
+      <button onclick="document.getElementById('quit-form').submit()" class="btn btn-danger" style="flex:1;">Yes, Abandon</button>
+      <button onclick="document.getElementById('quit-modal').style.display='none'" class="btn btn-secondary" style="flex:1;">Cancel</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>function confirmQuit(){document.getElementById('quit-modal').style.display='flex';}</script>
+{% endblock %}

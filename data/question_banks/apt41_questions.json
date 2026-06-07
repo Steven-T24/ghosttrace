@@ -1,0 +1,248 @@
+[
+  {
+    "id": "apt41_plan_01",
+    "phase": "plan",
+    "order": 1,
+    "question": "Based on your threat intelligence research, what behaviour are you hunting for and in what environment? Define your hunt scope for this APT41 investigation.",
+    "requires_spl": false,
+    "expected_elements": [
+      "GCP environment mentioned",
+      "endpoint activity mentioned",
+      "dual espionage and financial motivation referenced",
+      "web application exploitation as initial access mentioned",
+      "specific APT41 tradecraft identified"
+    ],
+    "hint_context": "APT41 is unique in conducting both state-sponsored espionage and financially motivated attacks. They commonly exploit internet-facing applications to gain initial access."
+  },
+  {
+    "id": "apt41_plan_02",
+    "phase": "plan",
+    "order": 2,
+    "question": "What data sources will you prioritise and why? List the relevant Splunk sourcetypes and event IDs most significant to APT41 tradecraft.",
+    "requires_spl": false,
+    "expected_elements": [
+      "gcp:audit sourcetype mentioned",
+      "Sysmon mentioned with event IDs",
+      "Windows Security Event Log mentioned",
+      "GCP IAM audit logs referenced",
+      "reasoning provided"
+    ],
+    "hint_context": "APT41 operates across GCP and endpoints. GCP audit logs will show IAM manipulation while Sysmon captures the endpoint execution chain after initial exploitation."
+  },
+  {
+    "id": "apt41_plan_03",
+    "phase": "plan",
+    "order": 3,
+    "question": "What does normal GCP IAM and service account activity look like versus what you expect from APT41? What assumptions are you taking into this investigation?",
+    "requires_spl": false,
+    "expected_elements": [
+      "normal GCP baseline described",
+      "adversary deviations identified such as IAM policy changes and new service account keys",
+      "web application exploitation context mentioned",
+      "assumptions clearly stated",
+      "false positive risks considered"
+    ],
+    "hint_context": "Think about what makes GCP IAM activity suspicious — policy modifications outside change windows, new service account keys, and cross-project access are key indicators."
+  },
+  {
+    "id": "apt41_exec_01",
+    "phase": "execute",
+    "order": 4,
+    "question": "Write an SPL query to identify GCP IAM policy modification events in the ghosttrace_apt41 index. What was changed and why is it suspicious?",
+    "requires_spl": true,
+    "expected_elements": [
+      "ghosttrace_apt41 index queried",
+      "gcp:audit sourcetype used",
+      "SetIamPolicy methodName identified",
+      "external service account added to owner role identified",
+      "attacker project referenced in the bindings"
+    ],
+    "hint_context": "Search GCP audit logs for methodName=SetIamPolicy. Look at the policy bindings — is an external service account being granted owner access?"
+  },
+  {
+    "id": "apt41_exec_02",
+    "phase": "execute",
+    "order": 5,
+    "question": "Identify the service account key creation event. Write an SPL query and explain what persistence mechanism this represents.",
+    "requires_spl": true,
+    "expected_elements": [
+      "CreateServiceAccountKey methodName identified",
+      "target service account identified",
+      "source IP noted",
+      "persistence via service account key explained",
+      "T1098.001 referenced"
+    ],
+    "hint_context": "Search for methodName containing CreateServiceAccountKey. Creating new keys for existing service accounts gives persistent access even if passwords are changed."
+  },
+  {
+    "id": "apt41_exec_03",
+    "phase": "execute",
+    "order": 6,
+    "question": "Identify the GCS data access activity. Write an SPL query to find cloud storage access events and describe what sensitive data was targeted.",
+    "requires_spl": true,
+    "expected_elements": [
+      "storage.objects.get methodName identified",
+      "sensitive bucket name identified",
+      "file accessed identified",
+      "service account used for access noted",
+      "T1530 Data from Cloud Storage identified"
+    ],
+    "hint_context": "Search GCP audit data_access logs for storage.objects.get. What buckets and objects were accessed and does the content suggest espionage or financial motivation?"
+  },
+  {
+    "id": "apt41_exec_04",
+    "phase": "execute",
+    "order": 7,
+    "question": "Shift to endpoint telemetry. Write an SPL query to identify the initial execution activity on the compromised host following web application exploitation.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=1 queried",
+      "suspicious process identified",
+      "web server or application process as parent noted",
+      "unusual child process from web server context",
+      "T1190 Exploit Public-Facing Application referenced"
+    ],
+    "hint_context": "Look for Sysmon EventID=1 where the parent process is a web server or application framework. A web server spawning PowerShell or cmd.exe is a classic exploitation indicator."
+  },
+  {
+    "id": "apt41_exec_05",
+    "phase": "execute",
+    "order": 8,
+    "question": "Identify the C2 network communication from the endpoint. Write an SPL query and describe the beaconing behaviour observed.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=3 queried",
+      "destination IP and port identified",
+      "suspicious destination hostname noted",
+      "beaconing pattern identified",
+      "process identified as source"
+    ],
+    "hint_context": "Use Sysmon EventID=3 to find outbound connections from the malicious process. Repeated connections at regular intervals to the same destination indicate C2 beaconing."
+  },
+  {
+    "id": "apt41_exec_06",
+    "phase": "execute",
+    "order": 9,
+    "question": "Identify credential access activity on the endpoint. Write an SPL query and explain what the adversary was trying to obtain.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=10 queried",
+      "LSASS access identified",
+      "GrantedAccess noted",
+      "malicious source process identified",
+      "GCP credentials or domain credentials as target discussed"
+    ],
+    "hint_context": "APT41 dumps credentials to facilitate lateral movement and potentially to access cloud resources. What credentials on this endpoint might be valuable to them?"
+  },
+  {
+    "id": "apt41_exec_07",
+    "phase": "execute",
+    "order": 10,
+    "question": "Correlate the GCP and endpoint activity into a unified attack timeline showing how the cloud compromise relates to the endpoint intrusion.",
+    "requires_spl": false,
+    "expected_elements": [
+      "web application exploitation as initial access",
+      "endpoint compromise established",
+      "GCP credentials obtained from endpoint",
+      "GCP IAM manipulation performed",
+      "data exfiltration from GCS",
+      "logical timeline with both environments"
+    ],
+    "hint_context": "Think about how APT41 moved from the web application to the endpoint and then into GCP. What credentials bridged those environments?"
+  },
+  {
+    "id": "apt41_exec_08",
+    "phase": "execute",
+    "order": 11,
+    "question": "Is this a true positive? Justify your conclusion with evidence from both cloud and endpoint telemetry.",
+    "requires_spl": false,
+    "expected_elements": [
+      "definitive true positive conclusion",
+      "GCP IAM manipulation cited",
+      "external service account access cited",
+      "sensitive data access cited",
+      "endpoint exploitation evidence cited",
+      "dual espionage and financial motivation considered"
+    ],
+    "hint_context": "You have evidence across GCP and endpoint environments. Does the combination of IAM manipulation, data access, and endpoint compromise constitute a true positive?"
+  },
+  {
+    "id": "apt41_report_01",
+    "phase": "report",
+    "order": 12,
+    "question": "What is the confirmed scope of the intrusion across cloud and endpoint environments?",
+    "requires_spl": false,
+    "expected_elements": [
+      "GCP project affected identified",
+      "IAM roles compromised identified",
+      "GCS buckets accessed identified",
+      "sensitive data at risk characterised",
+      "endpoint hostname identified"
+    ],
+    "hint_context": "Review all evidence across both environments. What GCP resources were compromised and what endpoint was exploited?"
+  },
+  {
+    "id": "apt41_report_02",
+    "phase": "report",
+    "order": 13,
+    "question": "Map all confirmed activity to MITRE ATT&CK techniques covering both the cloud and endpoint kill chain.",
+    "requires_spl": false,
+    "expected_elements": [
+      "T1190 Exploit Public-Facing Application referenced",
+      "T1098 Account Manipulation referenced",
+      "T1530 Data from Cloud Storage referenced",
+      "T1059 Command and Scripting Interpreter referenced",
+      "T1003.001 LSASS Memory referenced",
+      "T1071.001 C2 Web Protocols referenced",
+      "T1560 Archive Collected Data referenced if applicable"
+    ],
+    "hint_context": "Cover both the GCP-specific techniques and the endpoint techniques. APT41 has a broad TTP set spanning initial access through exfiltration."
+  },
+  {
+    "id": "apt41_report_03",
+    "phase": "report",
+    "order": 14,
+    "question": "What visibility gaps did you identify? What additional telemetry would have improved detection of this intrusion?",
+    "requires_spl": false,
+    "expected_elements": [
+      "web application firewall logs mentioned",
+      "GCP VPC flow logs mentioned",
+      "service account activity alerting mentioned",
+      "endpoint DNS logging mentioned",
+      "at least one gap clearly described"
+    ],
+    "hint_context": "Where in the attack chain did you have limited visibility? Web application logs, GCP VPC flow logs, and service account alerting are common gaps."
+  },
+  {
+    "id": "apt41_report_04",
+    "phase": "report",
+    "order": 15,
+    "question": "Write an SPL detection query to alert on GCP IAM policy changes that add external service accounts with owner or editor roles.",
+    "requires_spl": true,
+    "expected_elements": [
+      "gcp:audit sourcetype used",
+      "SetIamPolicy methodName targeted",
+      "owner or editor role in detection logic",
+      "external project service account logic mentioned",
+      "false positive considerations noted"
+    ],
+    "hint_context": "The key indicator is a policy binding that adds an external service account to a high-privilege role. How would you distinguish this from legitimate cross-project access?"
+  },
+  {
+    "id": "apt41_report_05",
+    "phase": "report",
+    "order": 16,
+    "question": "What are your recommended follow-on actions including immediate containment for both the GCP environment and the compromised endpoint?",
+    "requires_spl": false,
+    "expected_elements": [
+      "IR escalation recommended",
+      "GCP service account key revocation recommended",
+      "IAM policy rollback recommended",
+      "endpoint isolation mentioned",
+      "web application patching or WAF mentioned",
+      "GCS bucket access audit recommended",
+      "follow-on hunting for additional compromised systems"
+    ],
+    "hint_context": "Address containment across both environments simultaneously. GCP IAM remediation and endpoint isolation should happen in parallel."
+  }
+]

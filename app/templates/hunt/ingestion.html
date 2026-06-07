@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}GHOSTTRACE — Log Ingestion{% endblock %}
+{% block content %}
+<div class="main-wrap">
+  <div class="label">// Stage 03 — Log Generation & Ingestion</div>
+  <h1>Ingest Log Dataset</h1>
+  <p>Download the generated log dataset and ingest it into your Splunk instance before beginning the investigation.</p>
+
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:2rem;">
+    <div>
+      <h2>Step 1 — Download Logs</h2>
+      <div class="card">
+        <div class="label">Dataset</div>
+        <div style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700;color:var(--cyan);">ghosttrace_{{ session.apt_id }}_logs.json</div>
+        <p style="font-size:0.85rem;margin-top:0.5rem;">Generated log dataset containing realistic {{ profile.primary_environment | join(' / ') }} telemetry for {{ profile.display_name }}.</p>
+        <a href="{{ url_for('hunt.download_logs', session_id=session.id) }}" class="btn btn-primary" style="margin-top:0.75rem;display:inline-block;">Download Log Dataset</a>
+      </div>
+
+      <h2>Step 2 — Ingest into Splunk</h2>
+      <div class="card">
+        <div class="label">Splunk Index Name</div>
+        <code style="font-size:1rem;">ghosttrace_{{ session.apt_id }}</code>
+
+        <div style="margin-top:1.25rem;">
+          <div class="label">CLI Ingestion Command</div>
+          <div style="background:#070f1a;border:1px solid var(--border);padding:0.85rem;font-family:'Share Tech Mono',monospace;font-size:0.78rem;color:var(--cyan);overflow-x:auto;white-space:pre;">$SPLUNK_HOME/bin/splunk add oneshot \
+  /path/to/ghosttrace_{{ session.apt_id }}_logs.json \
+  -index ghosttrace_{{ session.apt_id }} \
+  -sourcetype _json \
+  -auth admin:password</div>
+        </div>
+
+        <div style="margin-top:1.25rem;">
+          <div class="label">Or via Splunk Web</div>
+          <ol style="padding-left:1.25rem;font-size:0.85rem;color:var(--grey);">
+            <li style="padding:0.2rem 0;">Navigate to Settings → Add Data → Upload</li>
+            <li style="padding:0.2rem 0;">Select the downloaded JSON file</li>
+            <li style="padding:0.2rem 0;">Set Source Type to <code>_json</code></li>
+            <li style="padding:0.2rem 0;">Set Index to <code>ghosttrace_{{ session.apt_id }}</code> (create if it doesn't exist)</li>
+            <li style="padding:0.2rem 0;">Complete the ingestion</li>
+          </ol>
+        </div>
+      </div>
+
+      <h2>Step 3 — Verify Ingestion</h2>
+      <div class="card">
+        <div class="label">Verification SPL Query</div>
+        <div style="background:#070f1a;border:1px solid var(--border);padding:0.85rem;font-family:'Share Tech Mono',monospace;font-size:0.78rem;color:var(--cyan);overflow-x:auto;white-space:pre;">index=ghosttrace_{{ session.apt_id }}
+| stats count by sourcetype</div>
+        <p style="font-size:0.82rem;margin-top:0.75rem;">Run this query in Splunk to confirm data has been ingested. You should see multiple sourcetypes present before proceeding.</p>
+      </div>
+    </div>
+
+    <div>
+      <h2>Expected Sourcetypes</h2>
+      <div class="card">
+        {% for source in profile.log_sources %}
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid var(--border);">
+          <div style="width:6px;height:6px;background:var(--cyan);flex-shrink:0;"></div>
+          <code style="font-size:0.75rem;">{{ source }}</code>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="card" style="margin-top:1rem;">
+        <div class="label">// Time Range</div>
+        <p style="font-size:0.82rem;">Set your Splunk time range to <strong>Last 24 hours</strong> to capture all generated events.</p>
+      </div>
+
+      <form method="POST" action="{{ url_for('hunt.confirm_ingestion', session_id=session.id) }}" style="margin-top:1.5rem;">
+        <div class="callout callout-orange" style="margin-bottom:1rem;">
+          Only proceed once data is confirmed in Splunk. The investigation questions require the dataset to be present.
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Ingestion Complete — Begin Investigation →</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

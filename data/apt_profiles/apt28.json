@@ -1,0 +1,39 @@
+{
+  "id": "apt28",
+  "display_name": "APT28",
+  "aliases": ["Fancy Bear", "Forest Blizzard", "STRONTIUM"],
+  "attribution": "Russia",
+  "motivation": "Espionage / Influence Operations",
+  "description": "A threat actor attributed to Russian military intelligence (GRU), active since at least 2004. Known for aggressive credential theft operations, spearphishing campaigns, and targeting of government, military, and media organisations.",
+  "primary_environment": ["Endpoints", "Email Infrastructure"],
+  "log_sources": ["sysmon", "winevent"],
+  "references": [
+    {
+      "label": "MITRE ATT&CK — APT28",
+      "url": "https://attack.mitre.org/groups/G0007/"
+    },
+    {
+      "label": "CISA Advisory AA23-042A",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-042a"
+    },
+    {
+      "label": "Mandiant — APT28",
+      "url": "https://www.mandiant.com/resources/apt28-a-window-into-russias-cyber-espionage-operations"
+    },
+    {
+      "label": "Microsoft — Forest Blizzard",
+      "url": "https://www.microsoft.com/en-us/security/blog/2023/08/02/midnight-blizzard-conducts-targeted-social-engineering-over-microsoft-teams/"
+    },
+    {
+      "label": "The DFIR Report — APT28",
+      "url": "https://thedfirreport.com/?s=apt28"
+    }
+  ],
+  "scenario": "A spearphishing campaign has been identified targeting users within the organisation. Endpoint telemetry indicates follow-on execution activity following email interaction. Investigate the full attack chain from initial access through to the adversary's objectives.",
+  "environment_note": "This group predominantly targets endpoint environments. Focus on process execution chains, credential access activity, and lateral movement techniques.",
+  "correct_ttps": [
+    "T1566.001", "T1204.002", "T1059.001", "T1059.003",
+    "T1003.001", "T1110.003", "T1021.001", "T1021.002",
+    "T1053.005", "T1547.001", "T1071.001", "T1041"
+  ]
+}

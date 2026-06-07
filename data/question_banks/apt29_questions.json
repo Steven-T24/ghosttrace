@@ -1,0 +1,250 @@
+[
+  {
+    "id": "apt29_plan_01",
+    "phase": "plan",
+    "order": 1,
+    "question": "Based on your threat intelligence research, what behaviour are you hunting for and in what environment? Define your hunt scope.",
+    "requires_spl": false,
+    "expected_elements": [
+      "cloud environment mentioned (AWS or similar)",
+      "endpoint activity mentioned",
+      "credential access or lateral movement referenced",
+      "specific APT29 behaviour identified from research"
+    ],
+    "hint_context": "Think about the environments APT29 is known to operate in. What does your research tell you about their preferred access methods and objectives?"
+  },
+  {
+    "id": "apt29_plan_02",
+    "phase": "plan",
+    "order": 2,
+    "question": "What data sources will you prioritise in this investigation and why? List the relevant Splunk sourcetypes and the event IDs you expect to be most significant.",
+    "requires_spl": false,
+    "expected_elements": [
+      "aws:cloudtrail or CloudTrail mentioned",
+      "Sysmon mentioned with specific event IDs",
+      "Windows Security Event Log mentioned",
+      "Event IDs 1, 3, 10 referenced for Sysmon",
+      "Reasoning provided for source prioritisation"
+    ],
+    "hint_context": "Consider what telemetry sources cover both cloud API activity and endpoint execution. What Sysmon event IDs are most relevant to the TTPs you mapped?"
+  },
+  {
+    "id": "apt29_plan_03",
+    "phase": "plan",
+    "order": 3,
+    "question": "What does normal AWS API activity look like compared to what you would expect to see from this adversary? What assumptions are you taking into the investigation?",
+    "requires_spl": false,
+    "expected_elements": [
+      "normal baseline described (regular business API calls, known users)",
+      "adversary deviations identified (unusual IAM calls, role assumption, off-hours activity)",
+      "assumptions clearly stated",
+      "false positive risks considered"
+    ],
+    "hint_context": "Think about what legitimate AWS API calls look like — what makes adversary activity stand out? Consider timing, the types of API calls, and the source IP addresses involved."
+  },
+  {
+    "id": "apt29_exec_01",
+    "phase": "execute",
+    "order": 4,
+    "question": "Write an SPL query to identify AWS AssumeRole events in the ghosttrace_apt29 index. What do you find, and what is suspicious about the activity?",
+    "requires_spl": true,
+    "expected_elements": [
+      "SPL queries the ghosttrace_apt29 index",
+      "eventName=AssumeRole or similar filter applied",
+      "sourcetype=aws:cloudtrail used",
+      "roleArn AdminRole identified as suspicious",
+      "unusual roleSessionName noted"
+    ],
+    "hint_context": "Search the CloudTrail sourcetype for AssumeRole events. Look at the roleArn field — what role is being assumed, and does the session name look legitimate?"
+  },
+  {
+    "id": "apt29_exec_02",
+    "phase": "execute",
+    "order": 5,
+    "question": "Using the source IP identified from the AssumeRole event, pivot to identify all other API calls made from that IP. What data was accessed?",
+    "requires_spl": true,
+    "expected_elements": [
+      "SPL pivots on source IP address",
+      "S3 GetObject event identified",
+      "corp-finance-reports bucket identified",
+      "financial data file identified",
+      "CopyObject / staging bucket activity noted"
+    ],
+    "hint_context": "Filter all CloudTrail events by the source IP address from the AssumeRole event. Look at what S3 buckets and objects were accessed — are these consistent with a legitimate business operation?"
+  },
+  {
+    "id": "apt29_exec_03",
+    "phase": "execute",
+    "order": 6,
+    "question": "Shift to endpoint telemetry. Write an SPL query to identify suspicious process creation events. What process was executed and what makes it suspicious?",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=1 queried",
+      "encoded PowerShell identified (-Enc parameter)",
+      "suspicious CommandLine flags noted (-NoP -NonI -W Hidden)",
+      "parent process identified",
+      "dropped file in Windows\\Temp noted"
+    ],
+    "hint_context": "Search Sysmon EventID=1 for PowerShell activity. Look at the CommandLine field — what flags are being used and what does -Enc suggest?"
+  },
+  {
+    "id": "apt29_exec_04",
+    "phase": "execute",
+    "order": 7,
+    "question": "Identify the C2 communication. Write an SPL query to find outbound network connections from the suspicious process. What is the destination and what pattern do you observe?",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=3 queried",
+      "PowerShell process filtered by ProcessId",
+      "destination IP and port identified (443)",
+      "destination hostname noted",
+      "beaconing pattern identified (multiple connections to same destination)"
+    ],
+    "hint_context": "Use Sysmon EventID=3 to find network connections originating from the PowerShell process. Filter by the ProcessId you identified. Look for repeated connections to the same destination — this is a beaconing pattern."
+  },
+  {
+    "id": "apt29_exec_05",
+    "phase": "execute",
+    "order": 8,
+    "question": "Identify the credential access activity. Write an SPL query to find LSASS access events and describe what this indicates.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=10 queried",
+      "TargetImage lsass.exe identified",
+      "GrantedAccess value noted",
+      "SourceImage identified as malicious binary",
+      "T1003.001 OS Credential Dumping identified"
+    ],
+    "hint_context": "Search for Sysmon EventID=10 where TargetImage contains lsass.exe. The GrantedAccess value tells you what the accessing process was trying to do with LSASS — 0x1010 is a common credential dumping access right."
+  },
+  {
+    "id": "apt29_exec_06",
+    "phase": "execute",
+    "order": 9,
+    "question": "Identify the persistence mechanism. Write an SPL query to find registry modifications and scheduled task creation events. What persistence technique was used?",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=13 queried for registry",
+      "Run key identified in TargetObject",
+      "Windows Security EID 4698 queried",
+      "Scheduled task name and content identified",
+      "T1547.001 and T1053.005 identified"
+    ],
+    "hint_context": "Check Sysmon EventID=13 for registry value modifications — look at the TargetObject field for Run key paths. Also check Windows Security EID=4698 for scheduled task creation."
+  },
+  {
+    "id": "apt29_exec_07",
+    "phase": "execute",
+    "order": 10,
+    "question": "Build a complete attack timeline. List the key events in chronological order from initial access to persistence, including timestamps and affected systems.",
+    "requires_spl": false,
+    "expected_elements": [
+      "CloudTrail IAM reconnaissance identified as early activity",
+      "AssumeRole event placed in correct order",
+      "S3 data access placed after role assumption",
+      "Endpoint PowerShell execution placed in timeline",
+      "LSASS access placed after execution",
+      "Lateral movement identified",
+      "Persistence mechanisms placed at end of chain",
+      "Timestamps referenced"
+    ],
+    "hint_context": "Sort the events you've identified by their timestamps. Start with the earliest CloudTrail events and work forward to the endpoint activity. What does the full chain look like from first touch to persistence?"
+  },
+  {
+    "id": "apt29_exec_08",
+    "phase": "execute",
+    "order": 11,
+    "question": "Is this a true positive? Justify your conclusion with specific evidence from the investigation.",
+    "requires_spl": false,
+    "expected_elements": [
+      "definitive true positive conclusion stated",
+      "multiple corroborating data points cited",
+      "encoded PowerShell as indicator",
+      "LSASS access as indicator",
+      "C2 beaconing as indicator",
+      "cloud data exfiltration as indicator",
+      "no legitimate business justification for the activity"
+    ],
+    "hint_context": "Consider each piece of evidence in isolation and then together. Is there any legitimate business reason for encoded PowerShell executing from cmd.exe, accessing LSASS, and then making repeated outbound connections to an unusual hostname?"
+  },
+  {
+    "id": "apt29_report_01",
+    "phase": "report",
+    "order": 12,
+    "question": "What is the confirmed scope of the intrusion? Which hosts and cloud resources were affected and what data is at risk?",
+    "requires_spl": false,
+    "expected_elements": [
+      "affected endpoint hostname identified",
+      "SRV-DC01 lateral movement target identified",
+      "AWS account and specific S3 bucket identified",
+      "financial data identified as at risk",
+      "staging bucket used for exfil staging noted"
+    ],
+    "hint_context": "Review your timeline. How many hosts were touched? What cloud resources were accessed? What data was staged or potentially exfiltrated?"
+  },
+  {
+    "id": "apt29_report_02",
+    "phase": "report",
+    "order": 13,
+    "question": "Map the confirmed activity to MITRE ATT&CK techniques. List the technique IDs and names you observed evidence for.",
+    "requires_spl": false,
+    "expected_elements": [
+      "T1550.001 Use Alternate Authentication Material",
+      "T1530 Data from Cloud Storage",
+      "T1059.001 PowerShell",
+      "T1027 Obfuscated Files or Information",
+      "T1003.001 LSASS Memory",
+      "T1071.001 Web Protocols (C2)",
+      "T1547.001 Registry Run Keys",
+      "T1021.002 SMB/Windows Admin Shares"
+    ],
+    "hint_context": "Go through each stage of the attack chain you documented. What MITRE ATT&CK technique does each action correspond to? Use the technique IDs from your earlier mapping and add any you've confirmed through the investigation."
+  },
+  {
+    "id": "apt29_report_03",
+    "phase": "report",
+    "order": 14,
+    "question": "What visibility gaps did you identify during this investigation? What additional telemetry would have improved your ability to detect this activity?",
+    "requires_spl": false,
+    "expected_elements": [
+      "at least one gap identified",
+      "network traffic capture mentioned as improvement",
+      "DNS logging mentioned",
+      "PowerShell ScriptBlock logging mentioned",
+      "cloud storage access logging improvements mentioned"
+    ],
+    "hint_context": "Think about the questions you couldn't fully answer during the investigation. Were there gaps in the log coverage? What additional sources would have given you earlier or clearer visibility?"
+  },
+  {
+    "id": "apt29_report_04",
+    "phase": "report",
+    "order": 15,
+    "question": "Write a Sigma rule or SPL detection query that would detect the encoded PowerShell execution technique you observed. Explain the logic.",
+    "requires_spl": true,
+    "expected_elements": [
+      "EventID=1 used",
+      "CommandLine contains -Enc or EncodedCommand",
+      "PowerShell image targeted",
+      "-NoP or -NonI or -W Hidden included",
+      "logic explained clearly",
+      "false positive considerations mentioned"
+    ],
+    "hint_context": "The key indicator is encoded PowerShell with evasion flags. Your detection should look for CommandLine values containing -Enc alongside -NonI or -W Hidden. What false positives might this generate in a real environment?"
+  },
+  {
+    "id": "apt29_report_05",
+    "phase": "report",
+    "order": 16,
+    "question": "What are your recommended follow-on actions? What should be escalated to incident response and what additional hunting should be conducted?",
+    "requires_spl": false,
+    "expected_elements": [
+      "incident response escalation recommended",
+      "affected host isolation mentioned",
+      "AWS credentials rotation recommended",
+      "S3 bucket access review recommended",
+      "follow-on hunt for additional compromised hosts",
+      "threat intelligence sharing mentioned"
+    ],
+    "hint_context": "Think about immediate containment, investigation expansion, and longer-term hardening. What needs to happen right now versus what can be planned over the coming days?"
+  }
+]

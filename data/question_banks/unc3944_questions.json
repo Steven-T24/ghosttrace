@@ -1,0 +1,251 @@
+[
+  {
+    "id": "unc3944_plan_01",
+    "phase": "plan",
+    "order": 1,
+    "question": "Based on your threat intelligence research, what behaviour are you hunting for and in what environment? Define your hunt scope for this UNC3944 investigation.",
+    "requires_spl": false,
+    "expected_elements": [
+      "Azure Active Directory environment mentioned",
+      "identity-based attack referenced",
+      "MFA manipulation or social engineering mentioned",
+      "financial motivation referenced",
+      "specific UNC3944 tradecraft identified"
+    ],
+    "hint_context": "UNC3944 specialises in identity-based attacks targeting Azure AD. Their primary techniques involve MFA manipulation and conditional access bypass rather than traditional malware."
+  },
+  {
+    "id": "unc3944_plan_02",
+    "phase": "plan",
+    "order": 2,
+    "question": "What data sources will you prioritise in this investigation and why? List the relevant Splunk sourcetypes and event IDs most significant to UNC3944 tradecraft.",
+    "requires_spl": false,
+    "expected_elements": [
+      "azure:aad:signin sourcetype mentioned",
+      "azure:aad:audit sourcetype mentioned",
+      "Sysmon mentioned",
+      "Azure conditional access logs referenced",
+      "reasoning provided"
+    ],
+    "hint_context": "UNC3944 is primarily an identity threat. Azure AD sign-in and audit logs are your most critical sources. Endpoint telemetry is secondary but relevant for their post-access activity."
+  },
+  {
+    "id": "unc3944_plan_03",
+    "phase": "plan",
+    "order": 3,
+    "question": "What does normal Azure AD sign-in activity look like versus what you would expect from UNC3944? What assumptions are you taking into this investigation?",
+    "requires_spl": false,
+    "expected_elements": [
+      "normal MFA baseline described",
+      "adversary MFA fatigue or bypass technique described",
+      "geographic anomalies mentioned",
+      "conditional access policy manipulation mentioned",
+      "assumptions clearly stated"
+    ],
+    "hint_context": "UNC3944 uses MFA fatigue attacks — they repeatedly send MFA push notifications until the user accepts one. What does a fatigue attack look like in sign-in logs?"
+  },
+  {
+    "id": "unc3944_exec_01",
+    "phase": "execute",
+    "order": 4,
+    "question": "Write an SPL query to identify failed MFA authentication events in the ghosttrace_unc3944 index. What pattern do you observe and what does it indicate?",
+    "requires_spl": true,
+    "expected_elements": [
+      "ghosttrace_unc3944 index queried",
+      "azure:aad:signin sourcetype used",
+      "MFA failure error code identified such as 500121",
+      "repeated failures from same IP noted",
+      "MFA fatigue attack pattern identified"
+    ],
+    "hint_context": "Search Azure AD sign-in logs for MFA failures. Error code 500121 indicates MFA failure. Multiple failures from the same IP against the same account indicate a fatigue attack."
+  },
+  {
+    "id": "unc3944_exec_02",
+    "phase": "execute",
+    "order": 5,
+    "question": "Identify the successful authentication event following the MFA fatigue attack. Write an SPL query and describe the geographic anomaly present.",
+    "requires_spl": true,
+    "expected_elements": [
+      "successful sign-in event identified after failures",
+      "same IP as failed attempts noted",
+      "geographic location identified as anomalous",
+      "authentication method phone app notification noted",
+      "account compromised identified"
+    ],
+    "hint_context": "Look for a successful sign-in event shortly after the series of MFA failures from the same IP. Check the location field — where is the login coming from?"
+  },
+  {
+    "id": "unc3944_exec_03",
+    "phase": "execute",
+    "order": 6,
+    "question": "Identify the conditional access policy modification. Write an SPL query to find Azure AD audit events showing policy changes and explain the impact.",
+    "requires_spl": true,
+    "expected_elements": [
+      "azure:aad:audit sourcetype used",
+      "Update conditional access policy operation identified",
+      "policy disabled or weakened identified",
+      "Require MFA for All Users policy targeted",
+      "impact of disabling MFA policy explained"
+    ],
+    "hint_context": "Search Azure AD audit logs for conditional access policy updates. UNC3944 commonly disables MFA policies to enable persistent access without further MFA challenges."
+  },
+  {
+    "id": "unc3944_exec_04",
+    "phase": "execute",
+    "order": 7,
+    "question": "Identify the privilege escalation activity. Write an SPL query to find Azure AD role assignments and describe what access was granted.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Add member to role operation identified",
+      "Global Administrator role identified",
+      "new account added to GA role",
+      "actor performing the change identified",
+      "T1098 Account Manipulation identified"
+    ],
+    "hint_context": "Search Azure AD audit logs for Add member to role operations. UNC3944 adds attacker-controlled accounts to Global Administrator to maintain persistent privileged access."
+  },
+  {
+    "id": "unc3944_exec_05",
+    "phase": "execute",
+    "order": 8,
+    "question": "Shift to endpoint telemetry. Write an SPL query to identify remote management tooling deployed by the adversary following Azure AD compromise.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=1 queried",
+      "remote management tool identified such as AnyDesk or TeamViewer",
+      "unusual deployment context noted",
+      "parent process identified",
+      "T1219 Remote Access Software referenced"
+    ],
+    "hint_context": "UNC3944 commonly deploys legitimate remote access tools like AnyDesk or TeamViewer after gaining access. Search Sysmon EventID=1 for these tools running in unusual contexts."
+  },
+  {
+    "id": "unc3944_exec_06",
+    "phase": "execute",
+    "order": 9,
+    "question": "Identify the C2 or exfiltration activity from the endpoint. Write an SPL query showing outbound network connections from the remote access tool.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=3 queried",
+      "remote access tool identified as source",
+      "external IP or hostname identified",
+      "port noted as consistent with remote access protocol",
+      "persistent connection pattern noted"
+    ],
+    "hint_context": "Use Sysmon EventID=3 to find outbound connections from the remote access tool process. These connections represent the adversary's persistent access channel."
+  },
+  {
+    "id": "unc3944_exec_07",
+    "phase": "execute",
+    "order": 10,
+    "question": "Build a complete attack timeline from the initial MFA fatigue attack through to persistent access establishment.",
+    "requires_spl": false,
+    "expected_elements": [
+      "MFA fatigue failures placed first",
+      "successful authentication placed after failures",
+      "conditional access policy disabled placed next",
+      "new GA account added placed in timeline",
+      "remote access tool deployed placed last",
+      "timestamps referenced",
+      "logical progression shown"
+    ],
+    "hint_context": "Order all events from the first MFA failure through to the persistent access mechanisms. Each stage should logically enable the next."
+  },
+  {
+    "id": "unc3944_exec_08",
+    "phase": "execute",
+    "order": 11,
+    "question": "Is this a true positive? Justify your conclusion with specific evidence from the Azure AD and endpoint telemetry.",
+    "requires_spl": false,
+    "expected_elements": [
+      "definitive true positive conclusion",
+      "MFA fatigue pattern cited",
+      "geographic anomaly cited",
+      "conditional access policy disabled cited",
+      "Global Administrator role added cited",
+      "remote access tool deployment cited",
+      "no legitimate business justification"
+    ],
+    "hint_context": "Multiple MFA failures followed by success from an unusual location, then immediate policy changes and privilege escalation — does any legitimate scenario explain this combination?"
+  },
+  {
+    "id": "unc3944_report_01",
+    "phase": "report",
+    "order": 12,
+    "question": "What is the confirmed scope of the identity-based compromise? Which accounts, policies, and systems were affected?",
+    "requires_spl": false,
+    "expected_elements": [
+      "compromised admin account identified",
+      "conditional access policy disabled identified",
+      "new GA account created by attacker identified",
+      "endpoint with remote access tool identified",
+      "overall identity risk characterised"
+    ],
+    "hint_context": "Review all evidence — which accounts were compromised, what policies were changed, and what persistent access mechanisms were established?"
+  },
+  {
+    "id": "unc3944_report_02",
+    "phase": "report",
+    "order": 13,
+    "question": "Map all confirmed activity to MITRE ATT&CK techniques including the identity-specific techniques used by UNC3944.",
+    "requires_spl": false,
+    "expected_elements": [
+      "T1621 Multi-Factor Authentication Request Generation referenced",
+      "T1556.006 Modify Authentication Process referenced",
+      "T1098 Account Manipulation referenced",
+      "T1538 Cloud Service Dashboard referenced",
+      "T1219 Remote Access Software referenced",
+      "T1078 Valid Accounts referenced",
+      "T1087.004 Cloud Account Discovery referenced"
+    ],
+    "hint_context": "UNC3944 uses several identity-specific ATT&CK techniques not commonly seen with other groups. Make sure to include the MFA-specific techniques."
+  },
+  {
+    "id": "unc3944_report_03",
+    "phase": "report",
+    "order": 14,
+    "question": "What visibility gaps did you identify? What additional Azure AD or endpoint telemetry would have improved early detection?",
+    "requires_spl": false,
+    "expected_elements": [
+      "at least one gap identified",
+      "Azure AD Identity Protection alerts mentioned",
+      "impossible travel detection mentioned",
+      "conditional access change alerting mentioned",
+      "endpoint application control mentioned"
+    ],
+    "hint_context": "Where in the attack chain did you have limited visibility? Azure Identity Protection, impossible travel detection, and privileged role change alerting are common gaps."
+  },
+  {
+    "id": "unc3944_report_04",
+    "phase": "report",
+    "order": 15,
+    "question": "Write an SPL detection query to alert on MFA fatigue attacks — multiple MFA failures against the same account within a short timeframe.",
+    "requires_spl": true,
+    "expected_elements": [
+      "azure:aad:signin sourcetype used",
+      "MFA failure error code filtered",
+      "count threshold within time window",
+      "grouping by userPrincipalName and IP",
+      "logic explained",
+      "false positive considerations mentioned"
+    ],
+    "hint_context": "The key indicator is multiple MFA failures from the same IP against the same account in a short window. What threshold distinguishes an attack from legitimate MFA issues?"
+  },
+  {
+    "id": "unc3944_report_05",
+    "phase": "report",
+    "order": 16,
+    "question": "What are your recommended follow-on actions to remediate this identity-based compromise and harden the Azure AD environment?",
+    "requires_spl": false,
+    "expected_elements": [
+      "IR escalation recommended",
+      "compromised account password reset and session revocation",
+      "attacker-created GA account removal",
+      "conditional access policy restoration",
+      "phishing-resistant MFA migration mentioned",
+      "privileged identity management review mentioned",
+      "number matching MFA mentioned"
+    ],
+    "hint_context": "Identity-based compromises require both immediate remediation and longer-term hardening. Consider phishing-resistant MFA and Privileged Identity Management as key controls."
+  }
+]

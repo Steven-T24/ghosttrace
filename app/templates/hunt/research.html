@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}GHOSTTRACE — Research: {{ profile.display_name }}{% endblock %}
+{% block content %}
+<div class="main-wrap">
+  <div class="label">// Stage 01 — Research</div>
+  <h1>{{ profile.display_name }}</h1>
+
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:2rem;">
+    <div>
+      <h2>Group Overview</h2>
+      <div class="card">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
+          <div><div class="label">Attribution</div><div style="font-family:'Share Tech Mono',monospace;color:var(--white);">{{ profile.attribution }}</div></div>
+          <div><div class="label">Motivation</div><div style="font-family:'Share Tech Mono',monospace;color:var(--white);">{{ profile.motivation }}</div></div>
+          <div><div class="label">Aliases</div><div style="font-size:0.82rem;color:var(--grey);">{{ profile.aliases | join(', ') }}</div></div>
+          <div><div class="label">Environment</div>
+            {% for env in profile.primary_environment %}
+            <span style="font-family:'Share Tech Mono',monospace;font-size:0.6rem;color:var(--orange);border:1px solid rgba(255,105,0,0.4);padding:0.15rem 0.4rem;margin-right:0.25rem;">{{ env }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="callout callout-orange"><div class="label">// Scenario</div>{{ profile.scenario }}</div>
+        <div class="callout" style="margin-top:0.75rem;"><div class="label">// Investigation Note</div>{{ profile.environment_note }}</div>
+      </div>
+
+      <h2>Threat Intelligence References</h2>
+      <p>Research this group using the references below before forming your hypothesis. No TTPs or IOCs are provided here.</p>
+      {% for ref in profile.references %}
+      <div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:0.85rem 1.25rem;margin-bottom:0.5rem;">
+        <div>
+          <div style="font-family:'Rajdhani',sans-serif;font-weight:600;color:var(--white);font-size:0.95rem;">{{ ref.label }}</div>
+          <div style="font-family:'Share Tech Mono',monospace;font-size:0.65rem;color:var(--grey-dim);">{{ ref.url }}</div>
+        </div>
+        <a href="{{ ref.url }}" target="_blank" rel="noopener" class="btn btn-secondary" style="padding:0.3rem 0.85rem;font-size:0.72rem;white-space:nowrap;margin-left:1rem;">Open →</a>
+      </div>
+      {% endfor %}
+
+      {% if misp.available %}
+      <h2>MISP Intelligence</h2>
+      <div class="card" style="border-left:3px solid var(--green);">
+        <div class="label" style="color:var(--green);">// MISP — {{ misp.event_count }} Events Found</div>
+        <p style="font-size:0.85rem;margin-top:0.5rem;">Your MISP instance has intelligence related to this group. Review the events below for additional context — do not rely on these as answers.</p>
+        {% for link in misp.event_links %}
+        <div style="padding:0.3rem 0;border-bottom:1px solid var(--border);">
+          <a href="{{ link.url }}" target="_blank" style="color:var(--cyan);font-size:0.82rem;font-family:'Share Tech Mono',monospace;">Event #{{ link.id }}</a>
+          <span style="color:var(--grey);font-size:0.78rem;margin-left:0.75rem;">{{ link.title }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <h2>Research Notes</h2>
+      <p style="font-size:0.85rem;">Use this area to capture IOCs, TTPs, and observations from your research. These notes will be visible on the hypothesis page.</p>
+      <form method="POST">
+        <div class="form-group">
+          <label>IOCs, TTPs & Notes</label>
+          <textarea name="research_notes" rows="12" placeholder="Capture anything relevant from your research:&#10;&#10;IPs: x.x.x.x&#10;Domains: evil.com&#10;Hashes: abc123...&#10;TTPs: T1078 - Valid Accounts&#10;Notes: Group known to target...">{{ session.research_notes or '' }}</textarea>
+        </div>
+        <button type="submit" class="btn btn-secondary">Save Notes</button>
+      </form>
+    </div>
+
+    <div>
+      <h2>Hunt Progress</h2>
+      <div class="card">
+        {% set stages = ['research','hypothesis','ingestion','investigation','documentation','complete'] %}
+        {% for stage in stages %}
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid var(--border);">
+          <div style="width:8px;height:8px;flex-shrink:0;background:{% if session.status == stage %}var(--orange){% elif stages.index(stage) < stages.index(session.status) %}var(--green){% else %}var(--grey-dim){% endif %};"></div>
+          <div style="font-family:'Rajdhani',sans-serif;font-size:0.82rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:{% if session.status == stage %}var(--orange){% elif stages.index(stage) < stages.index(session.status) %}var(--green){% else %}var(--grey-dim){% endif %};">{{ stage }}</div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="card" style="margin-top:1rem;">
+        <div class="label">// Before Proceeding</div>
+        <ul style="list-style:none;padding:0;margin-top:0.5rem;">
+          <li style="padding:0.3rem 0;font-size:0.82rem;color:var(--grey);">✓ Read the MITRE ATT&CK page</li>
+          <li style="padding:0.3rem 0;font-size:0.82rem;color:var(--grey);">✓ Review at least one advisory</li>
+          <li style="padding:0.3rem 0;font-size:0.82rem;color:var(--grey);">✓ Note the TTPs you expect</li>
+          <li style="padding:0.3rem 0;font-size:0.82rem;color:var(--grey);">✓ Understand the environment</li>
+          <li style="padding:0.3rem 0;font-size:0.82rem;color:var(--grey);">✓ Form a clear hypothesis</li>
+        </ul>
+      </div>
+
+      <a href="{{ url_for('hunt.hypothesis', session_id=session.id) }}" class="btn btn-primary" style="width:100%;text-align:center;margin-top:1rem;display:block;">Proceed to Hypothesis →</a>
+
+      <form method="POST" action="{{ url_for('hunt.quit_hunt', session_id=session.id) }}" style="margin-top:0.75rem;" id="quit-form">
+        <button type="button" class="btn btn-danger" style="width:100%;" onclick="confirmQuit()">Abandon Hunt</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="quit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center;">
+  <div class="card" style="max-width:400px;width:90%;border-color:var(--red);">
+    <div class="label" style="color:var(--red);">// Confirm Abandon</div>
+    <p style="margin:1rem 0;">Are you sure you want to abandon this hunt? All progress will be lost.</p>
+    <div style="display:flex;gap:1rem;">
+      <button onclick="document.getElementById('quit-form').submit()" class="btn btn-danger" style="flex:1;">Yes, Abandon</button>
+      <button onclick="document.getElementById('quit-modal').style.display='none'" class="btn btn-secondary" style="flex:1;">Cancel</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function confirmQuit() {
+  document.getElementById('quit-modal').style.display = 'flex';
+}
+</script>
+{% endblock %}

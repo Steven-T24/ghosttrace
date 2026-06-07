@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>GHOSTTRACE Hunt Report — {{ session.apt_name }}</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Inter:wght@300;400;500&display=swap');
+:root{--navy:#0d1f35;--navy-lt:#163052;--cyan:#00d4ff;--orange:#ff6900;--white:#e8f0f8;--grey:#7a9ab8;--border:rgba(0,212,255,0.18);--green:#00ff88;--red:#ff3355;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--navy);color:var(--white);font-family:'Inter',sans-serif;font-weight:300;font-size:14px;line-height:1.7;padding:3rem;}
+.header{border-bottom:2px solid var(--cyan);padding-bottom:1.5rem;margin-bottom:2rem;}
+.wordmark{font-family:'Share Tech Mono',monospace;font-size:1.8rem;color:var(--cyan);letter-spacing:0.1em;}
+.wordmark span{color:var(--orange);}
+.doc-title{font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--white);margin-top:0.5rem;}
+.meta-row{display:flex;gap:3rem;margin-top:1rem;}
+.meta-item .label{font-family:'Share Tech Mono',monospace;font-size:0.6rem;color:var(--orange);letter-spacing:0.2em;text-transform:uppercase;}
+.meta-item .val{font-family:'Share Tech Mono',monospace;font-size:0.82rem;color:var(--white);}
+h2{font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700;color:var(--cyan);border-bottom:1px solid var(--border);padding-bottom:0.4rem;margin:2rem 0 0.85rem;letter-spacing:0.05em;}
+p,li{color:var(--grey);font-size:0.9rem;}
+.section{margin-bottom:1.5rem;}
+.content-box{background:var(--navy-lt);border:1px solid var(--border);padding:1rem;white-space:pre-wrap;font-size:0.88rem;color:var(--grey);}
+.score-badge{display:inline-block;font-family:'Share Tech Mono',monospace;font-size:1.2rem;font-weight:bold;}
+.sh{color:var(--green);}.sm{color:var(--orange);}.sl{color:var(--red);}
+table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:0.85rem;}
+thead tr{background:var(--navy-lt);border-bottom:2px solid var(--cyan);}
+thead th{font-family:'Rajdhani',sans-serif;font-weight:600;color:var(--cyan);padding:0.5rem 0.75rem;text-align:left;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;}
+tbody tr{border-bottom:1px solid var(--border);}
+tbody td{padding:0.5rem 0.75rem;color:var(--grey);}
+.phase-b{display:inline-block;font-family:'Share Tech Mono',monospace;font-size:0.6rem;padding:0.15rem 0.4rem;border:1px solid;}
+.phase-plan{color:var(--cyan);border-color:var(--cyan);}
+.phase-execute{color:var(--orange);border-color:var(--orange);}
+.phase-report{color:var(--green);border-color:var(--green);}
+.footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--border);font-family:'Share Tech Mono',monospace;font-size:0.6rem;color:var(--grey);display:flex;justify-content:space-between;}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="wordmark">GHOST<span>TRACE</span></div>
+  <div class="doc-title">{{ doc.hunt_title or (session.apt_name + ' Threat Hunt') }}</div>
+  <div class="meta-row">
+    <div class="meta-item"><div class="label">Analyst</div><div class="val">{{ doc.analyst_name or session.user.username }}</div></div>
+    <div class="meta-item"><div class="label">APT Group</div><div class="val">{{ session.apt_name }}</div></div>
+    <div class="meta-item"><div class="label">Completed</div><div class="val">{{ session.completed_at.strftime('%Y-%m-%d %H:%M') if session.completed_at else now.strftime('%Y-%m-%d %H:%M') }} UTC</div></div>
+    <div class="meta-item"><div class="label">Overall Score</div>
+      <div class="val">
+        {% if session.overall_score %}
+        <span class="score-badge {% if session.overall_score >= 7 %}sh{% elif session.overall_score >= 5 %}sm{% else %}sl{% endif %}">
+          {{ '%.1f'|format(session.overall_score) }}/10
+        </span>
+        {% else %}N/A{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>Executive Summary</h2>
+<div class="content-box">{{ doc.executive_summary or 'Not provided.' }}</div>
+
+<h2>Hypothesis</h2>
+<div class="content-box">{{ session.hypothesis_text or 'Not provided.' }}</div>
+
+<h2>TTP Mapping</h2>
+<div class="content-box" style="font-family:'Share Tech Mono',monospace;font-size:0.8rem;">{{ session.ttp_mapping or 'Not provided.' }}</div>
+
+<h2>Data Sources</h2>
+<div class="content-box">{{ doc.data_sources or 'Not provided.' }}</div>
+
+<h2>Attack Timeline</h2>
+<div class="content-box">{{ doc.timeline or 'Not provided.' }}</div>
+
+<h2>Confirmed TTPs</h2>
+<div class="content-box">{{ doc.confirmed_ttps or 'Not provided.' }}</div>
+
+<h2>Visibility Gaps</h2>
+<div class="content-box">{{ doc.visibility_gaps or 'Not provided.' }}</div>
+
+<h2>Detection Rules</h2>
+<div class="content-box" style="font-family:'Share Tech Mono',monospace;font-size:0.78rem;">{{ doc.detection_rules or 'Not provided.' }}</div>
+
+<h2>Recommendations</h2>
+<div class="content-box">{{ doc.recommendations or 'Not provided.' }}</div>
+
+<h2>Investigation Answers</h2>
+<table>
+  <thead><tr><th>Phase</th><th>Question</th><th>Score</th><th>Summary</th></tr></thead>
+  <tbody>
+    {% for a in answers %}
+    <tr>
+      <td><span class="phase-b phase-{{ a.phase }}">{{ a.phase }}</span></td>
+      <td style="max-width:200px;font-size:0.78rem;">{{ a.question_text[:70] }}...</td>
+      <td>{% if a.score is not none %}<span class="score-badge {% if a.score >= 7 %}sh{% elif a.score >= 5 %}sm{% else %}sl{% endif %}" style="font-size:0.9rem;">{{ '%.1f'|format(a.score) }}</span>{% else %}—{% endif %}</td>
+      <td style="font-size:0.78rem;max-width:250px;">{{ (a.answer_text or '')[:100] }}{% if (a.answer_text or '')|length > 100 %}...{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if session.overall_feedback %}
+<h2>AI Performance Summary</h2>
+<div class="content-box">{{ session.overall_feedback }}</div>
+{% endif %}
+
+<div class="footer">
+  <span>GHOSTTRACE — ADVERSARY EMULATION // THREAT HUNTING PLATFORM</span>
+  <span>Generated: {{ now.strftime('%Y-%m-%d %H:%M') }} UTC</span>
+</div>
+
+</body>
+</html>

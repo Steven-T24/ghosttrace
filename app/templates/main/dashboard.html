@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}GHOSTTRACE — Dashboard{% endblock %}
+{% block extra_css %}
+<style>
+.apt-card {
+  background: var(--navy-lt);
+  border: 1px solid var(--border);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.apt-card:hover { border-color: var(--cyan-dim); }
+.apt-card-body { flex: 1; }
+.apt-card-footer { margin-top: 1rem; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="main-wrap">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:2rem;">
+    <div>
+      <div class="label">// Threat Hunting Platform</div>
+      <h1>GHOSTTRACE</h1>
+      <p>Select an adversary group to begin a structured threat hunt.</p>
+    </div>
+    <div style="text-align:right;">
+      <div class="label">Analyst</div>
+      <div style="font-family:'Share Tech Mono',monospace;color:var(--cyan);">{{ current_user.username }}</div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:0.65rem;margin-top:0.25rem;">
+        MISP: <span style="color:{% if misp_online %}var(--green){% else %}var(--red){% endif %};">{% if misp_online %}ONLINE{% else %}OFFLINE{% endif %}</span>
+      </div>
+    </div>
+  </div>
+
+  {% if active_hunt %}
+  <div class="callout callout-orange" style="margin-bottom:2rem;">
+    <div class="label">// Active Hunt</div>
+    <strong style="color:var(--white);">{{ active_hunt.apt_name }}</strong> —
+    <span style="color:var(--orange);font-family:'Share Tech Mono',monospace;">{{ active_hunt.status.upper() }}</span>
+    {% if active_hunt.status == 'research' %}
+      <a href="{{ url_for('hunt.research', session_id=active_hunt.id) }}" class="btn btn-secondary" style="margin-left:1rem;padding:0.3rem 0.85rem;font-size:0.72rem;">Continue →</a>
+    {% elif active_hunt.status == 'ingestion' %}
+      <a href="{{ url_for('hunt.ingestion', session_id=active_hunt.id) }}" class="btn btn-secondary" style="margin-left:1rem;padding:0.3rem 0.85rem;font-size:0.72rem;">Continue →</a>
+    {% elif active_hunt.status == 'investigation' %}
+      <a href="{{ url_for('hunt.investigate', session_id=active_hunt.id) }}" class="btn btn-secondary" style="margin-left:1rem;padding:0.3rem 0.85rem;font-size:0.72rem;">Continue →</a>
+    {% elif active_hunt.status == 'documentation' %}
+      <a href="{{ url_for('hunt.documentation', session_id=active_hunt.id) }}" class="btn btn-secondary" style="margin-left:1rem;padding:0.3rem 0.85rem;font-size:0.72rem;">Continue →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <h2>Select Adversary Group</h2>
+  <div class="card-grid">
+    {% for p in profiles %}
+    <div class="apt-card">
+      <div class="apt-card-body">
+        <div style="position:absolute;top:0;right:0;font-family:'Share Tech Mono',monospace;font-size:3rem;color:rgba(0,212,255,0.03);line-height:1;pointer-events:none;padding:0.5rem;">{{ p.display_name }}</div>
+        <div class="label">{{ p.attribution }} // {{ p.motivation }}</div>
+        <div style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--cyan);margin:0.3rem 0;">{{ p.display_name }}</div>
+        <p style="font-size:0.82rem;margin-bottom:0.75rem;">{{ p.description[:120] }}...</p>
+        <div style="margin-bottom:0.5rem;">
+          {% for env in p.primary_environment %}
+          <span style="font-family:'Share Tech Mono',monospace;font-size:0.6rem;color:var(--orange);border:1px solid rgba(255,105,0,0.4);padding:0.15rem 0.5rem;margin-right:0.3rem;">{{ env }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="apt-card-footer">
+        <form method="POST" action="{{ url_for('hunt.start', apt_id=p.id) }}">
+          <button type="submit" class="btn btn-primary" style="width:100%;">Begin Hunt</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if completed_hunts %}
+  <h2 style="margin-top:3rem;">Completed Hunts</h2>
+  <table>
+    <thead>
+      <tr><th>APT Group</th><th>Completed</th><th>Overall Score</th><th>Grade</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for h in completed_hunts %}
+      <tr>
+        <td><span class="mono">{{ h.apt_name }}</span></td>
+        <td style="color:var(--grey);font-size:0.82rem;">{{ h.completed_at.strftime('%Y-%m-%d %H:%M') if h.completed_at else '—' }}</td>
+        <td>
+          {% if h.overall_score %}
+          <span class="mono {% if h.overall_score >= 7 %}score-high{% elif h.overall_score >= 5 %}score-mid{% else %}score-low{% endif %}">
+            {{ '%.1f'|format(h.overall_score) }}/10
+          </span>
+          {% else %}—{% endif %}
+        </td>
+        <td style="font-family:'Rajdhani',sans-serif;font-weight:600;font-size:0.9rem;">
+          {{ h.overall_feedback[:20] if h.overall_feedback else '—' }}
+        </td>
+        <td>
+          <a href="{{ url_for('hunt.export', session_id=h.id) }}" class="btn btn-secondary" style="padding:0.25rem 0.75rem;font-size:0.7rem;">Export</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

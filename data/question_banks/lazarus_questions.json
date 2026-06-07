@@ -1,0 +1,247 @@
+[
+  {
+    "id": "lazarus_plan_01",
+    "phase": "plan",
+    "order": 1,
+    "question": "Based on your threat intelligence research, what behaviour are you hunting for and in what environment? Define your hunt scope for this Lazarus Group investigation.",
+    "requires_spl": false,
+    "expected_elements": [
+      "cloud environment mentioned specifically AWS",
+      "financial motivation referenced",
+      "endpoint activity mentioned",
+      "cryptocurrency or financial system targeting referenced",
+      "specific Lazarus tradecraft identified"
+    ],
+    "hint_context": "Lazarus Group combines cloud infrastructure abuse with endpoint compromise for financial gain. Think about what their end objective is and how they achieve it."
+  },
+  {
+    "id": "lazarus_plan_02",
+    "phase": "plan",
+    "order": 2,
+    "question": "What data sources will you prioritise in this investigation and why? List the relevant Splunk sourcetypes and event IDs most relevant to Lazarus Group tradecraft.",
+    "requires_spl": false,
+    "expected_elements": [
+      "aws:cloudtrail mentioned",
+      "Sysmon mentioned with event IDs",
+      "Windows Security Event Log mentioned",
+      "S3 access logs or IAM events referenced",
+      "reasoning provided"
+    ],
+    "hint_context": "Lazarus operates across both cloud and endpoint. CloudTrail will show you the cloud activity while Sysmon captures the endpoint execution chain."
+  },
+  {
+    "id": "lazarus_plan_03",
+    "phase": "plan",
+    "order": 3,
+    "question": "What does normal AWS IAM and S3 activity look like versus what you would expect from Lazarus Group? What assumptions are you making entering this investigation?",
+    "requires_spl": false,
+    "expected_elements": [
+      "normal IAM baseline described",
+      "adversary deviations identified such as role assumption and unusual S3 access",
+      "financial data targeting mentioned",
+      "assumptions clearly stated",
+      "false positive risks considered"
+    ],
+    "hint_context": "Think about what makes Lazarus cloud activity suspicious — unusual role assumptions, access to financial data buckets, and exfiltration staging are key indicators."
+  },
+  {
+    "id": "lazarus_exec_01",
+    "phase": "execute",
+    "order": 4,
+    "question": "Write an SPL query to identify AWS IAM reconnaissance activity in the ghosttrace_lazarus index. What API calls were made and what do they indicate?",
+    "requires_spl": true,
+    "expected_elements": [
+      "ghosttrace_lazarus index queried",
+      "aws:cloudtrail sourcetype used",
+      "ListUsers or ListRoles eventName identified",
+      "source IP noted",
+      "reconnaissance objective identified"
+    ],
+    "hint_context": "Search CloudTrail for eventNames like ListUsers and ListRoles. These API calls indicate the adversary is mapping out the IAM environment."
+  },
+  {
+    "id": "lazarus_exec_02",
+    "phase": "execute",
+    "order": 5,
+    "question": "Identify the AWS role assumption event. Write an SPL query to find AssumeRole calls and explain what privilege escalation occurred.",
+    "requires_spl": true,
+    "expected_elements": [
+      "AssumeRole eventName identified",
+      "roleArn identified and assessed",
+      "roleSessionName noted as suspicious",
+      "source IP consistent with earlier reconnaissance",
+      "privilege escalation to admin role noted"
+    ],
+    "hint_context": "Filter CloudTrail for eventName=AssumeRole. Look at the roleArn field — what role is being assumed and does the session name look legitimate?"
+  },
+  {
+    "id": "lazarus_exec_03",
+    "phase": "execute",
+    "order": 6,
+    "question": "Using the assumed role credentials, identify what S3 data was accessed. Write an SPL query and describe what financial data was at risk.",
+    "requires_spl": true,
+    "expected_elements": [
+      "S3 GetObject event identified",
+      "bucket name identified as financial",
+      "file name or path noted",
+      "CopyObject exfiltration staging identified",
+      "staging bucket identified"
+    ],
+    "hint_context": "After the AssumeRole, pivot to S3 API calls from the same source IP. Look for GetObject and CopyObject events — these show data access and staging."
+  },
+  {
+    "id": "lazarus_exec_04",
+    "phase": "execute",
+    "order": 7,
+    "question": "Shift to endpoint telemetry. Write an SPL query to identify the initial malicious process execution on the compromised host.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=1 queried",
+      "encoded PowerShell identified",
+      "suspicious parent process noted",
+      "payload dropped to disk identified",
+      "evasion flags noted"
+    ],
+    "hint_context": "Search Sysmon EventID=1 for PowerShell with encoded commands. Look at what process spawned the PowerShell and what files were created afterward."
+  },
+  {
+    "id": "lazarus_exec_05",
+    "phase": "execute",
+    "order": 8,
+    "question": "Identify the C2 communication from the compromised endpoint. Write an SPL query showing the network connections and describe the beaconing pattern.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=3 queried",
+      "destination IP and port 443 noted",
+      "destination hostname identified",
+      "repeated connections indicating beaconing",
+      "process identified as source"
+    ],
+    "hint_context": "Use Sysmon EventID=3 filtered by the malicious process. Look for repeated connections to the same external destination — consistent intervals suggest beaconing."
+  },
+  {
+    "id": "lazarus_exec_06",
+    "phase": "execute",
+    "order": 9,
+    "question": "Identify the credential access activity on the endpoint. Write an SPL query and explain what credentials the adversary was targeting.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=10 queried",
+      "LSASS access identified",
+      "GrantedAccess value noted",
+      "malicious source process identified",
+      "credential theft objective identified"
+    ],
+    "hint_context": "Search Sysmon EventID=10 where TargetImage contains lsass.exe. Lazarus uses credential theft to move laterally and authenticate to financial systems."
+  },
+  {
+    "id": "lazarus_exec_07",
+    "phase": "execute",
+    "order": 10,
+    "question": "Correlate the cloud and endpoint activity. Build a unified timeline showing how the endpoint compromise relates to the AWS intrusion.",
+    "requires_spl": false,
+    "expected_elements": [
+      "endpoint compromise placed before or concurrent with AWS activity",
+      "AWS credentials likely stolen from endpoint",
+      "timeline shows logical progression",
+      "both environments shown as part of same campaign",
+      "financial data as ultimate objective identified"
+    ],
+    "hint_context": "Think about how the adversary got AWS credentials. Were they stolen from the compromised endpoint? Does the timing of endpoint events correlate with the cloud API calls?"
+  },
+  {
+    "id": "lazarus_exec_08",
+    "phase": "execute",
+    "order": 11,
+    "question": "Is this a true positive? Justify your conclusion with specific evidence from both the cloud and endpoint telemetry.",
+    "requires_spl": false,
+    "expected_elements": [
+      "definitive true positive conclusion",
+      "cloud IAM reconnaissance cited",
+      "role assumption to admin cited",
+      "financial S3 data access cited",
+      "endpoint malware and LSASS access cited",
+      "financial motivation consistent with Lazarus profile"
+    ],
+    "hint_context": "You have evidence across both cloud and endpoint environments. Together does this paint a clear picture of a financially motivated intrusion?"
+  },
+  {
+    "id": "lazarus_report_01",
+    "phase": "report",
+    "order": 12,
+    "question": "What is the confirmed scope? Which cloud resources, endpoints, and data were compromised or at risk?",
+    "requires_spl": false,
+    "expected_elements": [
+      "AWS account and IAM roles identified",
+      "S3 buckets accessed identified",
+      "financial data at risk characterised",
+      "staging bucket for exfil noted",
+      "endpoint hostname identified"
+    ],
+    "hint_context": "Review your timeline across both environments. What cloud resources were accessed and what endpoint was compromised?"
+  },
+  {
+    "id": "lazarus_report_02",
+    "phase": "report",
+    "order": 13,
+    "question": "Map all confirmed activity to MITRE ATT&CK techniques. Include both cloud and endpoint techniques with evidence summaries.",
+    "requires_spl": false,
+    "expected_elements": [
+      "T1078.004 Valid Accounts Cloud referenced",
+      "T1550.001 Use Alternate Authentication Material referenced",
+      "T1530 Data from Cloud Storage referenced",
+      "T1537 Transfer Data to Cloud Account referenced",
+      "T1059.001 PowerShell referenced",
+      "T1003.001 LSASS Memory referenced",
+      "T1071.001 C2 over Web Protocols referenced"
+    ],
+    "hint_context": "Map each stage of the attack to an ATT&CK technique. Lazarus uses both cloud-specific and endpoint techniques — make sure you cover both."
+  },
+  {
+    "id": "lazarus_report_03",
+    "phase": "report",
+    "order": 14,
+    "question": "What visibility gaps did you identify? What additional telemetry would have improved detection of this financially motivated intrusion?",
+    "requires_spl": false,
+    "expected_elements": [
+      "at least one gap identified",
+      "S3 server access logging mentioned",
+      "CloudTrail alerting on sensitive API calls mentioned",
+      "endpoint DNS logging mentioned",
+      "network traffic analysis mentioned"
+    ],
+    "hint_context": "Where were the gaps in your investigation? What would have given you earlier warning of the cloud reconnaissance or the endpoint compromise?"
+  },
+  {
+    "id": "lazarus_report_04",
+    "phase": "report",
+    "order": 15,
+    "question": "Write an SPL detection query to alert on AWS AssumeRole events targeting high-privilege roles from unexpected source IPs.",
+    "requires_spl": true,
+    "expected_elements": [
+      "CloudTrail sourcetype used",
+      "AssumeRole eventName filtered",
+      "Admin or high privilege role targeted in detection",
+      "logic explained",
+      "false positive considerations mentioned such as legitimate automation"
+    ],
+    "hint_context": "The key indicator is AssumeRole targeting a high-privilege role. How would you baseline legitimate role assumptions to reduce false positives?"
+  },
+  {
+    "id": "lazarus_report_05",
+    "phase": "report",
+    "order": 16,
+    "question": "What are your recommended follow-on actions including immediate containment, AWS hardening, and further hunting actions?",
+    "requires_spl": false,
+    "expected_elements": [
+      "IR escalation recommended",
+      "AWS credentials rotation recommended",
+      "S3 bucket access review recommended",
+      "IAM role review recommended",
+      "endpoint isolation mentioned",
+      "hunt for additional compromised systems mentioned",
+      "financial institution notification if applicable"
+    ],
+    "hint_context": "Think about immediate containment across both environments — AWS credential revocation, endpoint isolation, and S3 bucket access reviews."
+  }
+]

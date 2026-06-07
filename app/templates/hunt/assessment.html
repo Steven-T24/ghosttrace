@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}GHOSTTRACE — Hunt Complete{% endblock %}
+{% block content %}
+<div class="main-wrap">
+  <div class="label">// Hunt Complete — {{ profile.display_name }}</div>
+  <h1>Performance Summary</h1>
+
+  {% if result %}
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1rem;margin-bottom:2rem;">
+    {% set dim = [
+      ('Hypothesis', result.get('hypothesis_score', 0)),
+      ('TTP Mapping', result.get('ttp_score', 0)),
+      ('Investigation', result.get('investigation_avg', 0)),
+      ('Documentation', result.get('doc_score', 0)),
+      ('Overall', result.get('overall_score', 0))
+    ] %}
+    {% for label, score in dim %}
+    <div class="card" style="text-align:center;">
+      <div class="label" style="font-size:0.58rem;">{{ label }}</div>
+      {% set s = score or 0 %}
+      <div class="score-display {% if s >= 7 %}score-high{% elif s >= 5 %}score-mid{% else %}score-low{% endif %}" style="font-size:1.8rem;">{{ '%.1f'|format(s) }}</div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:0.65rem;color:var(--grey);">/10</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-bottom:2rem;">
+    <div class="card">
+      <div class="label">Overall Grade</div>
+      <div style="font-family:'Rajdhani',sans-serif;font-size:2rem;font-weight:700;
+        color:{% if result.grade == 'Excellent' %}var(--green){% elif result.grade == 'Good' %}var(--cyan){% elif result.grade == 'Developing' %}var(--orange){% else %}var(--red){% endif %};">
+        {{ result.grade }}
+      </div>
+      <p style="font-size:0.88rem;margin-top:0.75rem;">{{ result.summary }}</p>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:1rem;">
+        <div class="label" style="color:var(--green);">// Strengths</div>
+        <ul style="list-style:none;padding:0;margin-top:0.5rem;">
+          {% for s in result.strengths %}<li style="padding:0.25rem 0;font-size:0.85rem;color:var(--grey);">✓ {{ s }}</li>{% endfor %}
+        </ul>
+      </div>
+      <div class="card">
+        <div class="label" style="color:var(--orange);">// Areas for Improvement</div>
+        <ul style="list-style:none;padding:0;margin-top:0.5rem;">
+          {% for a in result.areas_for_improvement %}<li style="padding:0.25rem 0;font-size:0.85rem;color:var(--grey);">→ {{ a }}</li>{% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-bottom:2rem;">
+    <div class="card">
+      <div class="label">// Hypothesis Assessment</div>
+      <div style="font-size:0.85rem;color:var(--grey);margin-top:0.5rem;">{{ result.hypothesis_feedback }}</div>
+    </div>
+    <div class="card">
+      <div class="label">// TTP Mapping Assessment</div>
+      <div style="font-size:0.85rem;color:var(--grey);margin-top:0.5rem;">{{ result.ttp_feedback }}</div>
+    </div>
+  </div>
+
+  {% if result.recommended_next_steps %}
+  <div class="card" style="margin-bottom:2rem;">
+    <div class="label">// Recommended Next Steps</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.75rem;margin-top:0.75rem;">
+      {% for step in result.recommended_next_steps %}
+      <div style="padding:0.65rem;background:var(--navy-mid);border:1px solid var(--border);font-size:0.82rem;color:var(--grey);">{{ step }}</div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <h2>Answer Breakdown</h2>
+  <table style="margin-bottom:2rem;">
+    <thead><tr><th>Phase</th><th>Question</th><th>Score</th><th>Feedback</th></tr></thead>
+    <tbody>
+      {% for a in answers %}
+      <tr>
+        <td><span class="phase-badge phase-{{ a.phase }}">{{ a.phase }}</span></td>
+        <td style="font-size:0.78rem;max-width:250px;">{{ a.question_text[:70] if a.question_text else '' }}...</td>
+        <td>
+          {% if a.score is not none %}
+          <span class="mono {% if a.score >= 7 %}score-high{% elif a.score >= 5 %}score-mid{% else %}score-low{% endif %}">{{ '%.1f'|format(a.score) }}</span>
+          {% else %}—{% endif %}
+        </td>
+        <td style="font-size:0.75rem;color:var(--grey);max-width:300px;">{{ (a.feedback or '')[:100] }}{% if (a.feedback or '')|length > 100 %}...{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="callout callout-orange">
+    <div class="label">// Assessment Unavailable</div>
+    AI assessment could not be completed. Your hunt has been recorded. Check your API key configuration and try again.
+  </div>
+  {% endif %}
+
+  <div style="display:flex;gap:1rem;">
+    <a href="{{ url_for('hunt.export', session_id=session.id) }}" class="btn btn-primary">Export Hunt Report</a>
+    <a href="{{ url_for('hunt.documentation', session_id=session.id) }}" class="btn btn-secondary">← Back to Documentation</a>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary">Dashboard</a>
+  </div>
+</div>
+{% endblock %}

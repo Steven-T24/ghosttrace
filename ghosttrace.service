@@ -1,0 +1,15 @@
+[Unit]
+Description=GHOSTTRACE Threat Hunting Platform
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ghosttrace
+Environment=PATH=/opt/ghosttrace/venv/bin
+ExecStart=/opt/ghosttrace/venv/bin/gunicorn run:app --bind 0.0.0.0:5000 --workers 2 --timeout 120
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}GHOSTTRACE — Login{% endblock %}
+{% block content %}
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem;">
+  <div style="width:100%;max-width:420px;">
+    <div style="text-align:center;margin-bottom:2.5rem;">
+      <div style="font-family:'Share Tech Mono',monospace;font-size:2rem;color:var(--cyan);letter-spacing:0.1em;">GHOST<span style="color:var(--orange);">TRACE</span></div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:0.65rem;color:var(--grey);letter-spacing:0.25em;margin-top:0.5rem;">ADVERSARY EMULATION // THREAT HUNTING PLATFORM</div>
+    </div>
+    <div class="card">
+      <div class="label" style="margin-bottom:1.5rem;">// Authentication Required</div>
+      <form method="POST">
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" name="username" required autocomplete="username"/>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" name="password" required autocomplete="current-password"/>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;margin-top:0.5rem;">Authenticate</button>
+      </form>
+    </div>
+    <p style="text-align:center;font-size:0.82rem;margin-top:1rem;">No account? <a href="{{ url_for('auth.register') }}" style="color:var(--cyan);">Register</a></p>
+  </div>
+</div>
+{% endblock %}

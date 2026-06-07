@@ -1,0 +1,35 @@
+{
+  "id": "unc3944",
+  "display_name": "UNC3944",
+  "aliases": ["Scattered Spider", "Octo Tempest"],
+  "attribution": "Financial (English-speaking)",
+  "motivation": "Financial",
+  "description": "A financially motivated threat actor known for sophisticated social engineering, SIM swapping, and identity-based attacks targeting Azure Active Directory and cloud infrastructure. Active since at least 2022.",
+  "primary_environment": ["Azure", "Endpoints"],
+  "log_sources": ["azure_activity", "azure_aad", "sysmon", "winevent"],
+  "references": [
+    {
+      "label": "MITRE ATT&CK — Scattered Spider",
+      "url": "https://attack.mitre.org/groups/G1015/"
+    },
+    {
+      "label": "CISA Advisory AA23-320A",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-320a"
+    },
+    {
+      "label": "Microsoft — Octo Tempest",
+      "url": "https://www.microsoft.com/en-us/security/blog/2023/10/25/octo-tempest-crosses-boundaries-to-facilitate-extortion-encryption-and-destruction/"
+    },
+    {
+      "label": "The DFIR Report — Scattered Spider",
+      "url": "https://thedfirreport.com/?s=scattered+spider"
+    }
+  ],
+  "scenario": "Azure Active Directory sign-in logs show anomalous MFA activity and conditional access policy modifications. Several privileged accounts have been accessed from unusual locations. Endpoint telemetry indicates remote management tooling deployed outside of normal IT processes.",
+  "environment_note": "This group specialises in identity-based attacks. Azure AD and sign-in logs are critical data sources. Look for MFA manipulation, conditional access bypass, and abuse of legitimate remote management tools.",
+  "correct_ttps": [
+    "T1078", "T1621", "T1556.006", "T1538", "T1087.004",
+    "T1098", "T1059.001", "T1219", "T1071.001",
+    "T1530", "T1486", "T1657"
+  ]
+}

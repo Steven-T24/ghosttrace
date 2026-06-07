@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: ghosttrace
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn run:app -c gunicorn.conf.py
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: LOCAL_MODE
+        value: false
+      - key: DAILY_AI_LIMIT
+        value: 20
+      - key: HINTS_PER_SESSION
+        value: 3
+      - key: FLASK_ENV
+        value: production

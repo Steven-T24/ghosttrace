@@ -1,0 +1,39 @@
+{
+  "id": "apt29",
+  "display_name": "APT29",
+  "aliases": ["Cozy Bear", "Midnight Blizzard", "NOBELIUM"],
+  "attribution": "Russia",
+  "motivation": "Espionage",
+  "description": "A sophisticated threat actor attributed to Russian intelligence services, active since at least 2008. Known for long-term, stealthy operations targeting government, diplomatic, and technology organisations.",
+  "primary_environment": ["AWS", "Endpoints"],
+  "log_sources": ["cloudtrail", "sysmon", "winevent"],
+  "references": [
+    {
+      "label": "MITRE ATT&CK — APT29",
+      "url": "https://attack.mitre.org/groups/G0016/"
+    },
+    {
+      "label": "CISA Advisory AA21-116A",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa21-116a"
+    },
+    {
+      "label": "Mandiant — APT29",
+      "url": "https://www.mandiant.com/resources/apt29-domain-fronting-with-tls"
+    },
+    {
+      "label": "Microsoft — Midnight Blizzard",
+      "url": "https://www.microsoft.com/en-us/security/blog/2024/01/25/midnight-blizzard-guidance-for-responders-on-nation-state-attack/"
+    },
+    {
+      "label": "The DFIR Report — APT29",
+      "url": "https://thedfirreport.com/?s=apt29"
+    }
+  ],
+  "scenario": "Suspicious activity has been identified across cloud infrastructure and endpoints within the organisation. Initial indicators suggest a long-running intrusion with low-and-slow reconnaissance behaviour. Investigate the telemetry to determine the scope, methodology, and impact of the activity.",
+  "environment_note": "This group is known to operate heavily within cloud environments. Focus your investigation on both cloud API activity and endpoint telemetry.",
+  "correct_ttps": [
+    "T1078", "T1078.004", "T1550.001", "T1530", "T1087.004",
+    "T1003.001", "T1059.001", "T1071.001", "T1027", "T1036.005",
+    "T1021.001", "T1560.001", "T1048"
+  ]
+}

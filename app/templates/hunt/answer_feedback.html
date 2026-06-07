@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}GHOSTTRACE — Answer Feedback{% endblock %}
+{% block content %}
+<div class="main-wrap">
+  <div class="label">// Answer Assessment — Q{{ q_index + 1 }} of {{ total }}</div>
+
+  <div style="display:flex;align-items:center;gap:1.5rem;margin-bottom:2rem;">
+    {% if answer and answer.score is not none %}
+    {% set s = answer.score %}
+    <div class="score-display {% if s >= 7 %}score-high{% elif s >= 5 %}score-mid{% else %}score-low{% endif %}">
+      {{ '%.1f'|format(s) }}<span style="font-size:1rem;color:var(--grey);">/10</span>
+    </div>
+    {% endif %}
+    <div>
+      <span class="phase-badge phase-{{ question.phase }}">{{ question.phase }}</span>
+      <p style="margin:0.3rem 0 0;font-size:0.85rem;color:var(--grey);">{{ question.question[:80] }}...</p>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-bottom:2rem;">
+    <div>
+      <div class="label">Your Answer</div>
+      <div class="card" style="font-size:0.85rem;color:var(--grey);white-space:pre-wrap;max-height:200px;overflow-y:auto;">{{ answer.answer_text if answer else '—' }}</div>
+
+      {% if answer and answer.spl_query %}
+      <div class="label" style="margin-top:1rem;">Your SPL Query</div>
+      <div style="background:#070f1a;border:1px solid var(--border);padding:0.75rem;font-family:'Share Tech Mono',monospace;font-size:0.78rem;color:var(--cyan);overflow-x:auto;white-space:pre;">{{ answer.spl_query }}</div>
+      {% endif %}
+    </div>
+
+    <div>
+      <div class="label">AI Feedback</div>
+      <div class="card" style="font-size:0.88rem;color:var(--grey);white-space:pre-wrap;">{{ answer.feedback if answer else 'No feedback available.' }}</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:1rem;">
+    {% if not is_last %}
+    <a href="{{ url_for('hunt.investigate', session_id=session.id) }}" class="btn btn-primary">Next Question →</a>
+    {% else %}
+    <a href="{{ url_for('hunt.documentation', session_id=session.id) }}" class="btn btn-primary">Proceed to Documentation →</a>
+    {% endif %}
+    <a href="{{ url_for('hunt.investigate', session_id=session.id) }}" class="btn btn-secondary">Review Question</a>
+  </div>
+</div>
+{% endblock %}

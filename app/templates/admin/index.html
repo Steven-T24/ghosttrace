@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}GHOSTTRACE — Admin{% endblock %}
+{% block content %}
+<div class="main-wrap">
+  <div class="label">// Admin Panel</div>
+  <h1>Platform Administration</h1>
+
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:2rem;">
+    <div class="card" style="text-align:center;">
+      <div class="label">Total Users</div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:2rem;color:var(--cyan);">{{ users|length }}</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="label">Total Hunts</div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:2rem;color:var(--orange);">{{ total_hunts }}</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="label">Completed Hunts</div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:2rem;color:var(--green);">{{ completed_hunts }}</div>
+    </div>
+  </div>
+
+  <h2>Users</h2>
+  <table>
+    <thead>
+      <tr><th>Username</th><th>Email</th><th>Registered</th><th>AI Calls Today</th><th>Admin</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td class="mono">{{ u.username }}</td>
+        <td style="color:var(--grey);font-size:0.82rem;">{{ u.email }}</td>
+        <td style="color:var(--grey);font-size:0.82rem;">{{ u.created_at.strftime('%Y-%m-%d') }}</td>
+        <td class="mono">{{ u.daily_ai_calls }}</td>
+        <td>{% if u.is_admin %}<span style="color:var(--orange);">Yes</span>{% else %}—{% endif %}</td>
+        <td>
+          {% if not u.is_admin %}
+          <form method="POST" action="{{ url_for('admin.delete_user', user_id=u.id) }}" style="display:inline;" onsubmit="return confirm('Delete user {{ u.username }}?');">
+            <button type="submit" class="btn btn-danger" style="padding:0.2rem 0.65rem;font-size:0.7rem;">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

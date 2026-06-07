@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}GHOSTTRACE — Investigation Q{{ question_num }}{% endblock %}
+{% block content %}
+<div class="main-wrap">
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+    <div class="label">// Stage 04 — Investigation: {{ profile.display_name }}</div>
+    <div style="display:flex;align-items:center;gap:1rem;">
+      <span style="font-family:'Share Tech Mono',monospace;font-size:0.75rem;color:var(--grey);">
+        Q{{ question_num }}/{{ total }} &nbsp;|&nbsp;
+        <span class="phase-badge phase-{{ question.phase }}">{{ question.phase }}</span>
+        &nbsp;|&nbsp; Hints: <span style="color:{% if hints_remaining > 0 %}var(--orange){% else %}var(--red){% endif %};">{{ hints_remaining }}</span>
+      </span>
+      <form method="POST" action="{{ url_for('hunt.quit_hunt', session_id=session.id) }}" id="quit-form">
+        <button type="button" class="btn btn-danger" style="padding:0.25rem 0.75rem;font-size:0.72rem;" onclick="confirmQuit()">Quit Hunt</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="progress-bar">
+    <div class="progress-bar-fill" style="width:{{ progress }}%;"></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:2rem;">
+    <div>
+      <div class="card" style="border-left:3px solid {% if question.phase == 'plan' %}var(--cyan){% elif question.phase == 'execute' %}var(--orange){% else %}var(--green){% endif %};">
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;">
+          <span class="phase-badge phase-{{ question.phase }}">{{ question.phase }}</span>
+          <span style="font-family:'Share Tech Mono',monospace;font-size:0.65rem;color:var(--grey);">Q{{ question_num }}/{{ total }}</span>
+        </div>
+        <h2 style="border:none;padding:0;margin-bottom:1.25rem;font-size:1.15rem;">{{ question.question }}</h2>
+
+        <!-- Guiding Questions -->
+        <details style="margin-bottom:1rem;">
+          <summary style="font-family:'Share Tech Mono',monospace;font-size:0.7rem;color:var(--cyan);letter-spacing:0.15em;cursor:pointer;user-select:none;">// GUIDING PROMPTS</summary>
+          <div class="callout" style="margin-top:0.5rem;">
+            {% if question.phase == 'plan' %}
+            <ul style="list-style:none;padding:0;">
+              <li style="padding:0.25rem 0;font-size:0.82rem;">→ What adversary behaviour does this question relate to?</li>
+              <li style="padding:0.25rem 0;font-size:0.82rem;">→ Which data sources would surface this activity?</li>
+              <li style="padding:0.25rem 0;font-size:0.82rem;">→ What does legitimate activity look like in contrast?</li>
+              <li style="padding:0.25rem 0;font-size:0.82rem;">→ What assumptions are you making?</li>
+            </ul>
+            {% elif question.phase == 'execute' %}
+            <ul style="list-style:none;padding:0;">
+              <li style="padding:0.25rem 0;font-size:0.82rem;">→ Which index and sourcetype should you query first?</li>
+              <li style="padding:0.25rem 0;font-size:0.82rem;">→ What fields are most relevant to filter on?</li>
+              <li style="padding:0.25rem 0;font-size:0.82rem;">→ What can you pivot on from your initial results?</li>
+              <li style="padding:0.25rem 0;font-size:0.82rem;">→ Does the activity make sense in a legitimate business context?</li>
+              <li style="padding:0.25rem 0;font-size:0.82rem;">→ Are there related events on other hosts or accounts?</li>
+            </ul>
+            {% else %}
+            <ul style="list-style:none;padding:0;">
+              <li style="padding:0.25rem 0;font-size:0.82rem;">→ What is the overall conclusion — true or false positive?</li>
+              <li style="padding:0.25rem 0;font-size:0.82rem;">→ What ATT&CK technique does this map to?</li>
+              <li style="padding:0.25rem 0;font-size:0.82rem;">→ What telemetry was missing that would have helped?</li>
+              <li style="padding:0.25rem 0;font-size:0.82rem;">→ How would you detect this at scale going forward?</li>
+              <li style="padding:0.25rem 0;font-size:0.82rem;">→ What should be escalated to incident response?</li>
+            </ul>
+            {% endif %}
+          </div>
+        </details>
+
+        <form method="POST" action="{{ url_for('hunt.submit_answer', session_id=session.id) }}">
+          <input type="hidden" name="question_index" value="{{ question_num - 1 }}"/>
+          {% if question.requires_spl %}
+          <div class="form-group">
+            <label>SPL Query</label>
+            <textarea name="spl_query" rows="4" placeholder="index=ghosttrace_{{ session.apt_id }} | ..."></textarea>
+          </div>
+          {% endif %}
+          <div class="form-group">
+            <label>Your Answer</label>
+            <textarea name="answer" rows="{% if question.requires_spl %}5{% else %}8{% endif %}" required
+              placeholder="Provide your detailed answer here. Explain your reasoning..."></textarea>
+          </div>
+          <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;">
+            <button type="submit" class="btn btn-primary">Save & Next →</button>
+            {% if hints_remaining > 0 %}
+            <button type="button" class="btn btn-secondary" id="hint-btn">Hint ({{ hints_remaining }} left)</button>
+            {% endif %}
+            {% if question_num > 1 %}
+            <a href="{{ url_for('hunt.investigate', session_id=session.id) }}" class="btn btn-secondary"
+               onclick="history.back();return false;">← Previous</a>
+            {% endif %}
+            <span style="font-family:'Share Tech Mono',monospace;font-size:0.65rem;color:var(--grey);margin-left:auto;">Answers saved — AI assessment at end only</span>
+          </div>
+        </form>
+
+        <div id="hint-box" style="display:none;margin-top:1rem;" class="callout callout-orange">
+          <div class="label">// Hint</div>
+          <div id="hint-text" style="font-size:0.88rem;color:var(--grey);"></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h2>Context</h2>
+      <div class="card">
+        <div class="label">Splunk Index</div>
+        <code>ghosttrace_{{ session.apt_id }}</code>
+        <div style="margin-top:1rem;">
+          <div class="label">Sourcetypes</div>
+          {% for source in profile.log_sources %}
+          <div style="font-family:'Share Tech Mono',monospace;font-size:0.7rem;color:var(--grey);padding:0.2rem 0;">{{ source }}</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:1rem;">
+        <div class="label">// Quick Reference</div>
+        <div style="font-size:0.75rem;color:var(--grey);">
+          {% set eids = [('1','Process Create'),('3','Network Connect'),('10','Process Access'),('11','File Create'),('13','Registry Value'),('4624','Successful Logon'),('4625','Failed Logon'),('4648','Explicit Credentials'),('4698','Task Created'),('4103','PS Module Log')] %}
+          {% for eid, name in eids %}
+          <div style="padding:0.2rem 0;border-bottom:1px solid var(--border);display:flex;gap:0.5rem;">
+            <span style="font-family:'Share Tech Mono',monospace;color:var(--orange);min-width:40px;">{{ eid }}</span>
+            <span>{{ name }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {% if session.research_notes %}
+      <div class="card" style="margin-top:1rem;">
+        <div class="label">// Your Research Notes</div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:0.72rem;color:var(--grey);white-space:pre-wrap;max-height:200px;overflow-y:auto;margin-top:0.5rem;">{{ session.research_notes }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div id="quit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center;">
+  <div class="card" style="max-width:400px;width:90%;border-color:var(--red);">
+    <div class="label" style="color:var(--red);">// Confirm Quit</div>
+    <p style="margin:1rem 0;">Are you sure you want to quit? Your answers so far will be lost.</p>
+    <div style="display:flex;gap:1rem;">
+      <button onclick="document.getElementById('quit-form').submit()" class="btn btn-danger" style="flex:1;">Yes, Quit</button>
+      <button onclick="document.getElementById('quit-modal').style.display='none'" class="btn btn-secondary" style="flex:1;">Cancel</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function confirmQuit(){document.getElementById('quit-modal').style.display='flex';}
+const hintBtn = document.getElementById('hint-btn');
+if(hintBtn){
+  hintBtn.addEventListener('click', async () => {
+    hintBtn.disabled = true;
+    hintBtn.textContent = 'Loading...';
+    try {
+      const resp = await fetch('{{ url_for("hunt.get_hint", session_id=session.id) }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({question_index: {{ question_num - 1 }}})
+      });
+      const data = await resp.json();
+      document.getElementById('hint-text').textContent = data.hint;
+      document.getElementById('hint-box').style.display = 'block';
+      hintBtn.textContent = `Hint (${data.hints_remaining} left)`;
+      if(data.hints_remaining === 0) hintBtn.disabled = true;
+    } catch(e) { hintBtn.textContent = 'Hint unavailable'; }
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}GHOSTTRACE — Hypothesis Assessment{% endblock %}
+{% block content %}
+<div class="main-wrap">
+  <div class="label">// Hypothesis Assessment Results</div>
+  <h1>Assessment Complete</h1>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-bottom:2rem;">
+    <div class="card">
+      <div class="label">Hypothesis Score</div>
+      {% set hs = session.hypothesis_score or 0 %}
+      <div class="score-display {% if hs >= 7 %}score-high{% elif hs >= 5 %}score-mid{% else %}score-low{% endif %}">
+        {{ '%.1f'|format(hs) }}<span style="font-size:1rem;color:var(--grey);">/10</span>
+      </div>
+      <div style="margin-top:1rem;font-size:0.88rem;color:var(--grey);">{{ session.hypothesis_feedback }}</div>
+    </div>
+
+    <div class="card">
+      <div class="label">TTP Mapping Score</div>
+      {% set ts = session.ttp_score or 0 %}
+      <div class="score-display {% if ts >= 7 %}score-high{% elif ts >= 5 %}score-mid{% else %}score-low{% endif %}">
+        {{ '%.1f'|format(ts) }}<span style="font-size:1rem;color:var(--grey);">/10</span>
+      </div>
+      <div style="margin-top:1rem;font-size:0.88rem;color:var(--grey);">{{ session.ttp_feedback }}</div>
+    </div>
+  </div>
+
+  <h2>Your Submissions</h2>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-bottom:2rem;">
+    <div>
+      <div class="label">Hypothesis</div>
+      <div class="card" style="font-size:0.85rem;color:var(--grey);white-space:pre-wrap;">{{ session.hypothesis_text }}</div>
+    </div>
+    <div>
+      <div class="label">TTP Mapping</div>
+      <div class="card" style="font-family:'Share Tech Mono',monospace;font-size:0.78rem;color:var(--grey);white-space:pre-wrap;">{{ session.ttp_mapping }}</div>
+    </div>
+  </div>
+
+  <div class="callout callout-orange" style="margin-bottom:2rem;">
+    <div class="label">// Next Step</div>
+    Download the generated log dataset and ingest it into Splunk before proceeding to the investigation. Use the index name specified in the ingestion instructions.
+  </div>
+
+  <a href="{{ url_for('hunt.ingestion', session_id=session.id) }}" class="btn btn-primary">Proceed to Log Ingestion →</a>
+</div>
+{% endblock %}

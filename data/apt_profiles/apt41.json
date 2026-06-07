@@ -1,0 +1,35 @@
+{
+  "id": "apt41",
+  "display_name": "APT41",
+  "aliases": ["Double Dragon", "Winnti", "Barium"],
+  "attribution": "China",
+  "motivation": "Espionage / Financial",
+  "description": "A dual-purpose threat actor attributed to Chinese state intelligence with a unique mandate to conduct both government-directed espionage and financially motivated cybercrime operations. Active since at least 2012.",
+  "primary_environment": ["GCP", "Endpoints"],
+  "log_sources": ["gcp_audit", "sysmon", "winevent"],
+  "references": [
+    {
+      "label": "MITRE ATT&CK — APT41",
+      "url": "https://attack.mitre.org/groups/G0096/"
+    },
+    {
+      "label": "CISA Advisory AA21-201A",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa21-201a"
+    },
+    {
+      "label": "Mandiant — APT41",
+      "url": "https://www.mandiant.com/resources/apt41-dual-espionage-and-cyber-crime-operation"
+    },
+    {
+      "label": "The DFIR Report — APT41",
+      "url": "https://thedfirreport.com/?s=apt41"
+    }
+  ],
+  "scenario": "GCP audit logs have flagged unusual service account activity and IAM policy modifications outside of change management windows. Concurrent endpoint telemetry shows signs of web application exploitation. Investigate the scope and objectives of the observed activity.",
+  "environment_note": "This group is known for exploiting internet-facing applications as an initial access vector before pivoting into cloud infrastructure. Examine both the application layer and cloud API telemetry carefully.",
+  "correct_ttps": [
+    "T1190", "T1059.001", "T1059.004", "T1078.004",
+    "T1098", "T1136", "T1003.001", "T1021.001",
+    "T1071.001", "T1048.003", "T1560", "T1105"
+  ]
+}

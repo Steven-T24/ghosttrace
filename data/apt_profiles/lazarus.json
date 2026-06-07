@@ -1,0 +1,35 @@
+{
+  "id": "lazarus",
+  "display_name": "Lazarus Group",
+  "aliases": ["HIDDEN COBRA", "Labyrinth Chollima", "ZINC"],
+  "attribution": "North Korea",
+  "motivation": "Financial / Espionage",
+  "description": "A threat actor attributed to North Korean state intelligence, active since at least 2009. Known for large-scale financial theft operations targeting cryptocurrency exchanges, financial institutions, and defence contractors.",
+  "primary_environment": ["AWS", "Endpoints"],
+  "log_sources": ["cloudtrail", "sysmon", "winevent"],
+  "references": [
+    {
+      "label": "MITRE ATT&CK — Lazarus Group",
+      "url": "https://attack.mitre.org/groups/G0032/"
+    },
+    {
+      "label": "CISA Advisory AA22-108A",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa22-108a"
+    },
+    {
+      "label": "Mandiant — Lazarus Group",
+      "url": "https://www.mandiant.com/resources/blog/lazarus-group-campaign"
+    },
+    {
+      "label": "The DFIR Report — Lazarus",
+      "url": "https://thedfirreport.com/?s=lazarus"
+    }
+  ],
+  "scenario": "Anomalous AWS API activity has been detected alongside suspicious endpoint behaviour. Financial system access patterns are outside normal baselines. Investigate the telemetry to determine whether this represents a financially motivated intrusion and assess the potential impact.",
+  "environment_note": "This group frequently combines cloud infrastructure abuse with endpoint compromise. Pay close attention to AWS credential usage patterns and any cryptocurrency-related process activity on endpoints.",
+  "correct_ttps": [
+    "T1566.002", "T1195", "T1078.004", "T1530", "T1537",
+    "T1059.001", "T1059.003", "T1003.001", "T1055",
+    "T1071.001", "T1041", "T1486"
+  ]
+}
