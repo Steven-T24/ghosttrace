@@ -1,0 +1,243 @@
+[
+  {
+    "id": "apt10_plan_01",
+    "phase": "plan",
+    "order": 1,
+    "question": "Based on your threat intelligence research, what behaviour are you hunting for and in what environment? Define your hunt scope for this APT10 investigation.",
+    "requires_spl": false,
+    "expected_elements": [
+      "MSP or managed service provider context mentioned",
+      "trusted relationship abuse referenced",
+      "multi-cloud pivot mentioned",
+      "Chinese state sponsorship referenced",
+      "supply chain attack vector identified"
+    ],
+    "guidance": "APT10 (MenuPass) is a Chinese MSS-linked group famous for targeting managed service providers to access their downstream clients. Research their Cloud Hopper campaign. The key concept is trusted relationship abuse — they compromise an MSP and then use the MSP's legitimate access to pivot into client environments. Your scope covers both the MSP infrastructure and connected cloud environments.",
+    "model_answer": "APT10 targets managed service providers to pivot into client networks via trusted relationships. The hunt scope covers MSP remote management infrastructure, stolen RMM (Remote Monitoring and Management) credentials, and subsequent lateral movement into AWS and Azure environments using the MSP's legitimate access. The hypothesis is that APT10 compromised MSP admin credentials, used legitimate RMM tooling to access client endpoints, and then leveraged cloud credentials found on those endpoints to access client cloud environments. Primary data sources: Sysmon, WinEventLog, aws:cloudtrail, azure:aad:audit.",
+    "hint_context": "APT10's Cloud Hopper campaign specifically targeted MSPs. Think about what an MSP has that makes them valuable as an attack vector — they have legitimate remote access to dozens or hundreds of client environments."
+  },
+  {
+    "id": "apt10_plan_02",
+    "phase": "plan",
+    "order": 2,
+    "question": "What data sources will you prioritise and why? What makes APT10 investigations unique compared to direct intrusion investigations?",
+    "requires_spl": false,
+    "expected_elements": [
+      "Sysmon mentioned",
+      "aws:cloudtrail or azure:aad:audit mentioned",
+      "RMM tool logs mentioned or considered",
+      "trusted relationship context noted",
+      "reasoning provided"
+    ],
+    "guidance": "APT10 investigations are unique because the initial access comes through legitimate channels — an MSP admin connecting is expected and normal. This means you need to look harder at what happens after the legitimate connection. Sysmon will show unusual process execution after RMM agent connections. CloudTrail will show cloud API calls from MSP-associated credentials at unusual times or with unusual patterns.",
+    "model_answer": "APT10 investigations differ because initial access mimics legitimate MSP activity. Priority sources: (1) Sysmon EID 1/3/10/13 — post-connection execution chain on client endpoints; (2) WinEventLog:Security EID 4624/4648 — logon events showing RMM-based access; (3) aws:cloudtrail — API calls from MSP-associated IAM credentials or assumed roles; (4) azure:aad:audit — service principal activity and cross-tenant access events. The key differentiator is timing and behaviour after connection — legitimate MSP work follows predictable patterns; APT10 reconnaissance and credential theft do not.",
+    "hint_context": "The challenge with APT10 is that their initial access looks legitimate. Focus on what happens after the MSP connection — does the activity match what an MSP admin would normally do?"
+  },
+  {
+    "id": "apt10_plan_03",
+    "phase": "plan",
+    "order": 3,
+    "question": "What does normal MSP remote access and cloud administration look like versus APT10 activity? What assumptions underpin your investigation?",
+    "requires_spl": false,
+    "expected_elements": [
+      "normal MSP baseline described",
+      "adversary deviations identified",
+      "trusted relationship abuse explained",
+      "assumptions stated",
+      "false positive risks considered"
+    ],
+    "guidance": "Normal MSP activity: scheduled maintenance windows, known RMM agent connections, specific admin accounts with consistent source IPs, work scoped to their contractual responsibilities. APT10 deviations: access outside maintenance windows, enumeration beyond the MSP's contractual scope, credential harvesting tools, cloud API enumeration using MSP service account credentials, data access inconsistent with MSP responsibilities.",
+    "model_answer": "Normal MSP baseline: RMM connections from known MSP IP ranges during agreed maintenance windows, admin accounts scoped to specific systems, cloud access limited to monitoring and patching functions, consistent userAgent strings from RMM platform. APT10 deviations: connections at unusual hours, PowerShell execution or credential tooling run during or after RMM sessions, cloud API calls that exceed MSP's contracted scope (e.g. accessing financial S3 buckets), bulk credential enumeration, data staged for exfiltration. Assumptions: (1) MSP has legitimate admin access to endpoints; (2) MSP cloud access is scoped to specific IAM roles; (3) MSP connections are logged in security tooling. False positive risk: legitimate emergency MSP work outside maintenance windows.",
+    "hint_context": "Think about the difference between what an MSP legitimately needs to do on your systems versus what APT10 would want to do using that access."
+  },
+  {
+    "id": "apt10_exec_01",
+    "phase": "execute",
+    "order": 4,
+    "question": "Write an SPL query to identify suspicious process execution following MSP remote access connections in the ghosttrace_apt10 index.",
+    "requires_spl": true,
+    "expected_elements": [
+      "ghosttrace_apt10 index queried",
+      "Sysmon EventID=1 queried",
+      "RMM process as parent identified",
+      "suspicious child process noted",
+      "execution outside maintenance window noted"
+    ],
+    "guidance": "Search Sysmon EventID=1 for processes spawned by common RMM agents (e.g. ScreenConnect, AnyDesk, TeamViewer, Datto). Legitimate MSP work spawns patching tools, diagnostic utilities, and scripted maintenance. APT10 spawns credential tools, reconnaissance commands, and PowerShell with encoded content from the same parent processes.",
+    "model_answer": "SPL: index=ghosttrace_apt10 sourcetype=Sysmon EventID=1 (ParentImage=*ScreenConnect* OR ParentImage=*AnyDesk* OR ParentImage=*TeamViewer* OR ParentImage=*msp_agent*) | table EventTime, Computer, User, Image, CommandLine, ParentImage\n\nFindings: After an RMM agent connection, cmd.exe and powershell.exe were spawned with enumeration commands (systeminfo, net user /domain, ipconfig /all) followed by encoded PowerShell. This activity is inconsistent with scheduled maintenance — it resembles manual reconnaissance. The encoded PowerShell subsequently dropped a payload to C:\\Windows\\Temp, consistent with APT10's second-stage implant deployment.",
+    "hint_context": "Search for processes where the parent is an RMM agent. What gets spawned after that? Legitimate MSP work spawns patching tools; attackers spawn recon commands and credential tools."
+  },
+  {
+    "id": "apt10_exec_02",
+    "phase": "execute",
+    "order": 5,
+    "question": "Identify the credential harvesting activity. Write an SPL query and explain what credentials APT10 was targeting and why.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=10 queried",
+      "LSASS access identified",
+      "cloud credential files targeted noted",
+      "credential value to APT10 explained",
+      "T1003.001 referenced"
+    ],
+    "guidance": "APT10 targets both domain credentials (via LSASS) and cloud credentials (AWS credential files, Azure service principal secrets, config files). Search Sysmon EID=10 for LSASS access and EID=11 for file access to credential file paths (.aws/credentials, .azure/, service-account-key.json). Domain credentials enable lateral movement; cloud credentials enable pivot into cloud environments.",
+    "model_answer": "SPL for LSASS: index=ghosttrace_apt10 sourcetype=Sysmon EventID=10 TargetImage=*lsass* | table EventTime, Computer, SourceImage, GrantedAccess\n\nSPL for credential files: index=ghosttrace_apt10 sourcetype=Sysmon EventID=11 (TargetFilename=*.aws* OR TargetFilename=*credentials* OR TargetFilename=*service-account*) | table EventTime, Computer, Image, TargetFilename\n\nFindings: LSASS accessed by malicious binary for domain credential harvesting. Additionally, file access to C:\\Users\\[admin]\\.aws\\credentials and C:\\Users\\[admin]\\.azure\\accessTokens.json — these contain the MSP admin's cloud API credentials. APT10 harvests these to pivot from the endpoint into AWS and Azure environments under the MSP admin's identity.",
+    "hint_context": "APT10 wants both domain credentials and cloud credentials. The domain credentials enable lateral movement on-premise; the cloud credentials (AWS ~/.aws/credentials, Azure tokens) enable them to pivot into cloud environments."
+  },
+  {
+    "id": "apt10_exec_03",
+    "phase": "execute",
+    "order": 6,
+    "question": "Pivot to cloud telemetry. Write an SPL query to identify suspicious AWS CloudTrail activity using the compromised MSP credentials.",
+    "requires_spl": true,
+    "expected_elements": [
+      "aws:cloudtrail sourcetype used",
+      "MSP-associated principal identified",
+      "unusual API calls identified",
+      "scope beyond MSP responsibilities noted",
+      "data access or lateral movement in cloud noted"
+    ],
+    "guidance": "Search CloudTrail for API calls made by the MSP-associated IAM user or role. Look for API calls that exceed the MSP's normal scope — accessing S3 buckets with sensitive data, assuming higher-privilege roles, or making IAM modifications. Compare the activity timing to the endpoint compromise to confirm correlation.",
+    "model_answer": "SPL: index=ghosttrace_apt10 sourcetype=\"aws:cloudtrail\" userIdentity.arn=*msp* OR userIdentity.arn=*managed-service* | stats count by eventName, sourceIPAddress | sort -count\n\nFindings: MSP-associated IAM credentials used to call ListBuckets, GetObject against financial and HR S3 buckets — outside the MSP's contracted patching and monitoring scope. AssumeRole call attempting to escalate to AdminRole. Source IP matches the endpoint's external IP, confirming the cloud calls originated from the compromised host. Timing correlates with the endpoint compromise window, confirming the harvested cloud credentials were used immediately.",
+    "hint_context": "Look at CloudTrail for the MSP's IAM principal. Are they doing things outside their normal scope? What S3 buckets are they accessing and does that match their contracted responsibilities?"
+  },
+  {
+    "id": "apt10_exec_04",
+    "phase": "execute",
+    "order": 7,
+    "question": "Identify the C2 communication and any data staging or exfiltration activity. Write SPL queries covering both endpoint and cloud telemetry.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=3 queried for C2",
+      "C2 destination identified",
+      "WinRAR or archiving tool identified for staging",
+      "S3 or cloud exfil path identified",
+      "T1041 or T1537 referenced"
+    ],
+    "guidance": "APT10 typically stages data using archiving tools (WinRAR, 7-Zip) before exfiltrating. Search Sysmon EID=1 for archiving tool execution and EID=3 for outbound connections from the C2 implant. Also check CloudTrail for PutObject calls to S3 buckets not owned by the victim organisation — APT10 has been known to exfiltrate via cloud storage.",
+    "model_answer": "SPL C2: index=ghosttrace_apt10 sourcetype=Sysmon EventID=3 Image=*svchost32* | stats count by DestinationIp, DestinationPort\n\nSPL staging: index=ghosttrace_apt10 sourcetype=Sysmon EventID=1 (Image=*WinRAR* OR Image=*7z*) | table EventTime, Computer, CommandLine\n\nFindings: C2 beaconing from svchost32.exe to external IP on port 443. WinRAR executed with command line compressing documents directory to an archive. CloudTrail shows PutObject to an S3 bucket in a different AWS account — likely attacker-controlled staging bucket. This is T1537 — Transfer Data to Cloud Account.",
+    "hint_context": "Look for archiving tool execution (WinRAR, 7-Zip) — that's data staging. Then look at where the data went — was it sent over C2 or uploaded to cloud storage?"
+  },
+  {
+    "id": "apt10_exec_05",
+    "phase": "execute",
+    "order": 8,
+    "question": "Build a complete attack timeline showing the MSP trusted relationship abuse chain from initial access through cloud pivot to exfiltration.",
+    "requires_spl": false,
+    "expected_elements": [
+      "MSP RMM connection as initial access",
+      "reconnaissance execution placed correctly",
+      "credential harvesting placed in timeline",
+      "cloud pivot placed after credential theft",
+      "data staging and exfiltration placed at end",
+      "timestamps referenced across endpoint and cloud"
+    ],
+    "guidance": "This timeline spans two environments — endpoint and cloud. Start with the RMM connection, move through endpoint compromise, then show how the stolen cloud credentials enabled the pivot into AWS. The cloud activity should temporally follow the endpoint credential theft.",
+    "model_answer": "Timeline: (1) RMM agent connection from MSP IP range — appears legitimate; (2) Post-connection reconnaissance — systeminfo, net user, ipconfig executed via cmd.exe spawned from RMM agent; (3) Encoded PowerShell executed — payload svchost32.exe dropped to C:\\Windows\\Temp; (4) C2 beaconing initiated from svchost32.exe to external IP; (5) LSASS accessed — domain credentials harvested; (6) AWS credential files (.aws/credentials) accessed — cloud credentials stolen; (7) CloudTrail: MSP IAM credentials used from victim endpoint IP to enumerate S3 buckets; (8) GetObject against financial S3 buckets; (9) AssumeRole attempt for privilege escalation; (10) WinRAR staging of documents directory; (11) PutObject to attacker-controlled S3 bucket — exfiltration complete. Endpoint and cloud activity overlaps in time — attacker worked both simultaneously.",
+    "hint_context": "The key transition in this timeline is when the attacker moves from endpoint to cloud. The cloud activity timestamp should be shortly after the credential file access on the endpoint."
+  },
+  {
+    "id": "apt10_exec_06",
+    "phase": "execute",
+    "order": 9,
+    "question": "Is this a true positive? Justify your conclusion with evidence across both the endpoint and cloud environments.",
+    "requires_spl": false,
+    "expected_elements": [
+      "definitive true positive conclusion",
+      "RMM-spawned malicious execution cited",
+      "LSASS access cited",
+      "cloud credential theft cited",
+      "cloud API access outside MSP scope cited",
+      "data exfiltration cited"
+    ],
+    "guidance": "Consider the full chain. The RMM connection looks legitimate — that alone wouldn't be a true positive. But the combination of reconnaissance commands, credential tools, C2 establishment, cloud credential theft, and out-of-scope S3 access from the MSP's credentials eliminates any legitimate business explanation.",
+    "model_answer": "True positive — confirmed with high confidence. The RMM connection alone is ambiguous, but the subsequent activity is unambiguous: (1) Reconnaissance commands (systeminfo, net user) spawned from RMM agent — no maintenance task requires domain enumeration; (2) Encoded PowerShell with evasion flags — no legitimate MSP script uses -NonI -W Hidden -Enc; (3) LSASS access from a binary in C:\\Windows\\Temp — not an MSP tool; (4) Access to AWS credential files — MSP has no legitimate need to read the client's cloud credentials; (5) CloudTrail API calls to financial S3 buckets from MSP credentials — outside contracted scope; (6) PutObject to unknown S3 account — confirmed exfiltration. This is APT10's Cloud Hopper methodology executed against this environment.",
+    "hint_context": "Work through each indicator and ask: could this have a legitimate MSP explanation? The RMM connection — yes. Encoded PowerShell with evasion flags from that connection — no."
+  },
+  {
+    "id": "apt10_report_01",
+    "phase": "report",
+    "order": 10,
+    "question": "What is the confirmed scope of the intrusion across endpoint and cloud environments?",
+    "requires_spl": false,
+    "expected_elements": [
+      "compromised endpoint identified",
+      "MSP credentials abused identified",
+      "AWS resources accessed identified",
+      "data exfiltrated characterised",
+      "potential downstream client impact assessed"
+    ],
+    "guidance": "APT10 intrusions via MSPs can have broad downstream impact — other MSP clients may also be affected. Scope not just this environment but consider whether the MSP compromise extends further.",
+    "model_answer": "Confirmed scope: (1) Endpoint WKSTN-[hostname] fully compromised — implant active, LSASS dumped, C2 established; (2) Domain credentials for cached accounts at risk — all accounts that logged into this endpoint; (3) MSP IAM credentials (AWS) used to access financial S3 buckets and attempt role escalation; (4) Data exfiltrated — documents directory archived and uploaded to attacker S3 bucket; (5) Potential downstream impact — if the MSP admin credentials are reused across multiple client environments, other clients may be compromised. Notification to the MSP required immediately to assess broader impact.",
+    "hint_context": "Don't just scope this individual environment. APT10 via MSP means other MSP clients may also be at risk. How would you communicate that?"
+  },
+  {
+    "id": "apt10_report_02",
+    "phase": "report",
+    "order": 11,
+    "question": "Map all confirmed activity to MITRE ATT&CK techniques. Include the supply chain and trusted relationship specific techniques.",
+    "requires_spl": false,
+    "expected_elements": [
+      "T1199 Trusted Relationship referenced",
+      "T1078 Valid Accounts referenced",
+      "T1059.001 PowerShell referenced",
+      "T1003.001 LSASS Memory referenced",
+      "T1530 Data from Cloud Storage referenced",
+      "T1537 Transfer Data to Cloud Account referenced"
+    ],
+    "guidance": "APT10 uses T1199 Trusted Relationship as the initial access technique — this is specific to MSP/supply chain attacks. Make sure to include this alongside the more common endpoint and cloud techniques.",
+    "model_answer": "T1199 Trusted Relationship — MSP RMM access abused as initial access vector; T1078 Valid Accounts — MSP admin credentials used; T1059.001 PowerShell — encoded PowerShell execution from RMM agent; T1027 Obfuscated Files or Information — -Enc evasion; T1003.001 LSASS Memory — credential dumping; T1552.001 Credentials In Files — .aws/credentials and Azure token files accessed; T1078.004 Valid Accounts: Cloud Accounts — stolen cloud credentials used; T1530 Data from Cloud Storage — S3 bucket access; T1537 Transfer Data to Cloud Account — PutObject to attacker S3; T1071.001 C2 Web Protocols — HTTPS beaconing; T1560.001 Archive via Utility — WinRAR staging.",
+    "hint_context": "T1199 Trusted Relationship is the defining technique here — it's what makes APT10 different from a direct intrusion. Make sure it's in your mapping."
+  },
+  {
+    "id": "apt10_report_03",
+    "phase": "report",
+    "order": 12,
+    "question": "What visibility gaps did you identify? What specific MSP security controls would have improved detection?",
+    "requires_spl": false,
+    "expected_elements": [
+      "at least one gap identified",
+      "MSP access logging mentioned",
+      "just-in-time access mentioned",
+      "credential file monitoring mentioned",
+      "cloud access scoping mentioned"
+    ],
+    "guidance": "MSP intrusions have specific gaps that don't apply to direct intrusions. Consider what controls would have made the MSP access more visible and the cloud pivot harder.",
+    "model_answer": "Visibility gaps: (1) No session recording for RMM connections — could not replay exactly what the MSP admin did during the session; (2) No alerting on process execution from RMM agent parent — the reconnaissance commands were not alerted; (3) No credential file access monitoring — .aws/credentials access was not alerted; (4) Cloud IAM not scoped to minimum necessary — MSP role had broader access than needed. MSP security improvements: (5) Implement just-in-time (JIT) access for MSP connections with approval workflow; (6) Session recording for all privileged MSP sessions; (7) Scope MSP cloud IAM roles to minimum required access with condition policies limiting source IPs; (8) Monitor and alert on access to cloud credential files on endpoints.",
+    "hint_context": "What controls are specific to the MSP relationship? Just-in-time access, session recording, and scoped IAM roles are the key ones."
+  },
+  {
+    "id": "apt10_report_04",
+    "phase": "report",
+    "order": 13,
+    "question": "Write an SPL detection query to identify cloud credential file access on endpoints. Explain the logic.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=11 used",
+      "credential file paths targeted",
+      "logic explained",
+      "false positive considerations mentioned"
+    ],
+    "guidance": "The key indicator is file read access to cloud credential file paths (.aws/credentials, .azure/accessTokens.json, service account JSON files). Sysmon EID=11 captures file creation — you may also need to consider process access patterns to detect reads.",
+    "model_answer": "SPL: index=* sourcetype=Sysmon EventID=11 (TargetFilename=*\\.aws\\\\credentials* OR TargetFilename=*accessTokens.json* OR TargetFilename=*service-account*.json OR TargetFilename=*\\.config\\\\gcloud*) | where NOT match(Image, \"aws\\.exe|az\\.exe|gcloud\\.exe|terraform\\.exe\") | table _time, Computer, User, Image, TargetFilename\n\nLogic: Fires when cloud credential files are accessed by processes other than the legitimate CLI tools that would normally read them.\n\nFalse positives: Legitimate cloud CLI tools (aws, az, gcloud, terraform) reading their own credential files. Whitelist known-good tools and focus on unusual processes (cmd.exe, powershell.exe, custom binaries) accessing credential paths.",
+    "hint_context": "The detection needs to fire when something unexpected reads a cloud credential file. What processes legitimately read these files, and how would you exclude them?"
+  },
+  {
+    "id": "apt10_report_05",
+    "phase": "report",
+    "order": 14,
+    "question": "What are your recommended follow-on actions including MSP notification and downstream impact assessment?",
+    "requires_spl": false,
+    "expected_elements": [
+      "MSP notification recommended",
+      "IR escalation recommended",
+      "endpoint isolation mentioned",
+      "cloud credential rotation mentioned",
+      "downstream client assessment mentioned",
+      "MSP access suspension mentioned"
+    ],
+    "guidance": "APT10 intrusions require coordinated response with the MSP. You need to suspend MSP access while investigating, notify them of the compromise, and assess whether other clients were affected. Don't let the MSP continue operating with potentially compromised credentials.",
+    "model_answer": "Immediate: (1) Suspend MSP remote access to all environments pending investigation; (2) Isolate compromised endpoint; (3) Rotate all AWS IAM credentials associated with MSP access; (4) Revoke MSP service principal credentials in Azure. Coordination: (5) Notify MSP of suspected compromise of their admin credentials — they need to investigate their own environment; (6) Work with MSP to identify all clients that share the same admin accounts or credential sets; (7) Coordinate with other potentially affected clients. Investigation: (8) Review all MSP RMM connections over past 90 days for similar activity patterns; (9) Review CloudTrail for any prior out-of-scope API calls from MSP credentials. Hardening: (10) Implement JIT access with approval workflow for MSP connections; (11) Scope cloud IAM roles to minimum necessary with source IP conditions; (12) Implement session recording for all privileged access.",
+    "hint_context": "The MSP is both a victim (their credentials were compromised) and a vector (their access was used against you). How do you handle that relationship in your response?"
+  }
+]

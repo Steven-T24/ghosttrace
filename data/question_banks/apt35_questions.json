@@ -1,0 +1,283 @@
+[
+  {
+    "id": "apt35_plan_01",
+    "phase": "plan",
+    "order": 1,
+    "question": "Based on your threat intelligence research, what behaviour are you hunting for and in what environment? Define your hunt scope for this APT35 investigation.",
+    "requires_spl": false,
+    "expected_elements": [
+      "Microsoft 365 or Exchange environment mentioned",
+      "phishing as initial access referenced",
+      "credential harvesting or OAuth token theft mentioned",
+      "Iranian state sponsorship or IRGC referenced",
+      "specific APT35 tradecraft identified"
+    ],
+    "guidance": "APT35 (Charming Kitten) is an Iranian state-sponsored group primarily targeting Microsoft 365 environments. Research their known campaigns — they favour credential harvesting pages that mimic Microsoft login portals and OAuth consent phishing. Your scope should cover M365 audit logs, Azure AD sign-in logs, and endpoint telemetry.",
+    "model_answer": "APT35 (Charming Kitten), attributed to Iran's IRGC, primarily conducts espionage operations targeting Microsoft 365 environments. The hunt scope covers credential harvesting via phishing, OAuth token theft, persistent mailbox access, and endpoint compromise. Primary data sources are O365 management audit logs, Azure AD sign-in and audit logs, and Sysmon endpoint telemetry. The hypothesis is that APT35 has used phishing to harvest credentials or OAuth tokens, gained persistent access to Exchange mailboxes, and potentially deployed endpoint implants for lateral movement.",
+    "hint_context": "APT35 is primarily an identity and email threat. Think about how they gain initial access and what they do once inside a Microsoft 365 tenant."
+  },
+  {
+    "id": "apt35_plan_02",
+    "phase": "plan",
+    "order": 2,
+    "question": "What data sources will you prioritise in this investigation and why? List the relevant Splunk sourcetypes and event IDs most significant to APT35 tradecraft.",
+    "requires_spl": false,
+    "expected_elements": [
+      "o365:management sourcetype mentioned",
+      "azure:aad:signin sourcetype mentioned",
+      "azure:aad:audit sourcetype mentioned",
+      "Sysmon mentioned with event IDs",
+      "reasoning provided for prioritisation"
+    ],
+    "guidance": "APT35 operates primarily in the identity and email layer. Your most valuable sources are O365 Unified Audit Log (sourcetype o365:management) for mailbox access, forwarding rules, and OAuth app consent. Azure AD sign-in logs show credential spray or token replay. Azure AD audit logs show account changes. Sysmon on endpoints captures any post-compromise execution.",
+    "model_answer": "Priority data sources: (1) o365:management — captures mailbox access, mail forwarding rule creation, OAuth app grants, and admin operations; (2) azure:aad:signin — shows authentication patterns, MFA bypasses, impossible travel, and token replay indicators; (3) azure:aad:audit — captures account modifications, role assignments, and conditional access changes; (4) Sysmon EID 1/3/10/13 — captures endpoint execution chain if implants were deployed post-phishing. O365 and Azure AD are highest priority as APT35 primarily operates in the identity and email layer before moving to endpoints.",
+    "hint_context": "APT35 lives in the identity and email layer. What logs would show someone accessing mailboxes they shouldn't, or setting up forwarding rules to exfiltrate email?"
+  },
+  {
+    "id": "apt35_plan_03",
+    "phase": "plan",
+    "order": 3,
+    "question": "What does normal Microsoft 365 and Azure AD activity look like versus what you would expect from APT35? What assumptions are you taking into this investigation?",
+    "requires_spl": false,
+    "expected_elements": [
+      "normal M365 baseline described",
+      "adversary deviations identified such as impossible travel or off-hours access",
+      "OAuth consent phishing or forwarding rules mentioned",
+      "assumptions clearly stated",
+      "false positive risks considered"
+    ],
+    "guidance": "Normal M365 activity includes regular business hours sign-ins from known locations, email access from registered devices, and no unexpected forwarding rules. APT35 deviations include: sign-ins from unusual geographies (Iran, surrounding regions), OAuth app consent from users that IT didn't authorise, mailbox forwarding rules created outside change windows, and bulk email access patterns. Consider that legitimate admin activity can look similar — state your assumptions clearly.",
+    "model_answer": "Normal M365 baseline: sign-ins from expected corporate IPs and geographies during business hours, MFA successful, no unexpected OAuth app consents, no mailbox forwarding rules outside IT-managed configuration. APT35 deviations: sign-ins from anomalous geographies or via VPN/anonymiser services, MFA fatigue or token replay bypassing MFA, OAuth consent granted to unrecognised applications, mailbox forwarding rules created to external addresses, bulk MailItemsAccessed operations outside business hours. Assumptions: (1) MFA is enforced for all users; (2) OAuth app consent requires admin approval; (3) forwarding rules to external domains are not standard business practice. False positive risk: legitimate travel, admin OAuth app deployment.",
+    "hint_context": "Think about what makes APT35 access stand out from a legitimate user or admin. Geography, timing, OAuth apps, and forwarding rules are your key differentiators."
+  },
+  {
+    "id": "apt35_exec_01",
+    "phase": "execute",
+    "order": 4,
+    "question": "Write an SPL query to identify suspicious Azure AD sign-in activity in the ghosttrace_apt35 index. What anomalies do you find?",
+    "requires_spl": true,
+    "expected_elements": [
+      "ghosttrace_apt35 index queried",
+      "azure:aad:signin sourcetype used",
+      "anomalous geography or IP identified",
+      "MFA failure or bypass noted",
+      "target account identified"
+    ],
+    "guidance": "Search Azure AD sign-in logs for authentication anomalies. Filter by sourcetype azure:aad:signin in the ghosttrace_apt35 index. Look at the location field — are there sign-ins from unexpected countries? Check errorCode 0 for successes and 500121 for MFA failures. The userPrincipalName field identifies the targeted account.",
+    "model_answer": "SPL: index=ghosttrace_apt35 sourcetype=\"azure:aad:signin\" | table time, properties.userPrincipalName, properties.ipAddress, properties.location.countryOrRegion, properties.status.errorCode, properties.authenticationDetails{}.authenticationMethod\n\nFindings: Sign-in attempts against a high-value account (admin or executive) from an anomalous geography inconsistent with the user's normal location. MFA failure events (errorCode 500121) followed by a successful authentication suggest MFA fatigue or token replay. The source IP is externally routable and does not match corporate infrastructure.",
+    "hint_context": "Search azure:aad:signin for sign-in activity. Look at the location.countryOrRegion field and compare it to where you'd expect your users to be signing in from."
+  },
+  {
+    "id": "apt35_exec_02",
+    "phase": "execute",
+    "order": 5,
+    "question": "Identify any OAuth application consent events. Write an SPL query to find OAuth app grants and explain the risk they represent.",
+    "requires_spl": true,
+    "expected_elements": [
+      "azure:aad:audit sourcetype used",
+      "Consent to application operation identified",
+      "application name or ID noted",
+      "permissions granted identified",
+      "T1528 Steal Application Access Token referenced"
+    ],
+    "guidance": "Search Azure AD audit logs for OAuth consent events. The operation name is 'Consent to application'. Look at the targetResources field for the application name and the modifiedProperties field for the permissions (scopes) granted. APT35 commonly tricks users into consenting to malicious OAuth apps that request Mail.Read or Mail.ReadWrite permissions — giving them persistent mailbox access without needing credentials.",
+    "model_answer": "SPL: index=ghosttrace_apt35 sourcetype=\"azure:aad:audit\" operationName=\"Consent to application\" | table time, properties.initiatedBy.user.userPrincipalName, properties.targetResources{}.displayName, properties.targetResources{}.modifiedProperties{}\n\nFindings: A user consented to an OAuth application named something innocuous (e.g. 'PDF Converter Pro' or 'Meeting Scheduler'). The permissions granted include Mail.Read and Mail.ReadWrite, giving the application persistent read/write access to the user's mailbox without requiring their password. This is T1528 — the attacker's OAuth app now has a persistent access token valid until revoked. This is a high-risk finding as it survives password resets.",
+    "hint_context": "Search azure:aad:audit for 'Consent to application'. What permissions did the application request? Mail.Read or Mail.ReadWrite access granted to an unrecognised app is a critical finding."
+  },
+  {
+    "id": "apt35_exec_03",
+    "phase": "execute",
+    "order": 6,
+    "question": "Investigate mailbox access and forwarding rules. Write SPL queries to identify suspicious O365 activity and describe what the adversary configured.",
+    "requires_spl": true,
+    "expected_elements": [
+      "o365:management sourcetype used",
+      "MailItemsAccessed or equivalent operation identified",
+      "New-InboxRule or forwarding rule creation identified",
+      "external forwarding address noted",
+      "T1114.002 Email Forwarding Rule referenced"
+    ],
+    "guidance": "Search O365 management audit logs. Operation 'MailItemsAccessed' shows mailbox read access — look for bulk access from unexpected client IPs. Operation 'New-InboxRule' or 'Set-Mailbox' with ForwardingAddress or ForwardingSMTPAddress parameters indicates a forwarding rule was created. APT35 commonly creates rules that forward all email, or email matching keywords, to an external address they control.",
+    "model_answer": "SPL for mailbox access: index=ghosttrace_apt35 sourcetype=\"o365:management\" Operation=MailItemsAccessed | stats count by UserId, ClientIPAddress | sort -count\n\nSPL for forwarding rules: index=ghosttrace_apt35 sourcetype=\"o365:management\" (Operation=New-InboxRule OR Operation=\"Set-Mailbox\") | table CreationTime, UserId, Parameters\n\nFindings: Bulk MailItemsAccessed events from a non-corporate IP address indicate automated mailbox harvesting. A New-InboxRule was created forwarding all inbound email to an external Gmail or ProtonMail address. This is T1114.002 — Email Forwarding Rule — giving the attacker a persistent copy of all future email without needing to re-authenticate.",
+    "hint_context": "Search o365:management for MailItemsAccessed and New-InboxRule operations. A forwarding rule to an external address means the attacker gets a copy of every email the victim receives."
+  },
+  {
+    "id": "apt35_exec_04",
+    "phase": "execute",
+    "order": 7,
+    "question": "Shift to endpoint telemetry. Write an SPL query to identify the execution chain on the compromised endpoint following the phishing email.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=1 queried",
+      "Office application spawning suspicious child process identified",
+      "encoded PowerShell or script execution identified",
+      "parent-child process relationship noted",
+      "T1566.001 Spearphishing Attachment referenced"
+    ],
+    "guidance": "After a user opens a malicious attachment, you'll see an Office application (WINWORD.EXE, EXCEL.EXE) spawning an unusual child process. Search Sysmon EventID=1 and look for Office applications as ParentImage with PowerShell, cmd.exe, or wscript.exe as child processes. The CommandLine field will often contain encoded content or suspicious flags.",
+    "model_answer": "SPL: index=ghosttrace_apt35 sourcetype=Sysmon EventID=1 (ParentImage=*WINWORD* OR ParentImage=*EXCEL* OR ParentImage=*OUTLOOK*) | table EventTime, Computer, User, Image, CommandLine, ParentImage, ParentCommandLine\n\nFindings: WINWORD.EXE spawned powershell.exe with -Enc flag and evasion parameters (-NoP -NonI -W Hidden). This is a classic malicious macro execution pattern (T1566.001). The encoded PowerShell drops a payload to Windows\\Temp and establishes C2 communication — consistent with APT35's use of malicious Office documents as phishing lures.",
+    "hint_context": "Look for Office applications (WINWORD, EXCEL, OUTLOOK) as parent processes spawning PowerShell or cmd.exe. A Word document spawning encoded PowerShell is a strong indicator of malicious macro execution."
+  },
+  {
+    "id": "apt35_exec_05",
+    "phase": "execute",
+    "order": 8,
+    "question": "Identify the C2 communication from the endpoint. Write an SPL query and describe the beaconing pattern observed.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=3 queried",
+      "outbound connection from malicious process identified",
+      "destination IP and port noted",
+      "beaconing pattern identified",
+      "T1071.001 Web Protocols referenced"
+    ],
+    "guidance": "Search Sysmon EventID=3 for network connections from the suspicious PowerShell process identified in the previous question. Filter by the ProcessId you found. Look for repeated connections to the same external IP or hostname — regular intervals indicate automated beaconing. Port 443 is commonly used to blend with legitimate HTTPS traffic.",
+    "model_answer": "SPL: index=ghosttrace_apt35 sourcetype=Sysmon EventID=3 Image=*powershell* | stats count by DestinationIp, DestinationPort, DestinationHostname | sort -count\n\nFindings: Multiple outbound connections from powershell.exe to the same external IP on port 443 at regular ~300 second intervals. The destination hostname follows a DGA-like pattern (random subdomain under a recently registered domain). This is T1071.001 — Application Layer Protocol: Web Protocols — beaconing over HTTPS to blend with normal web traffic. The regularity of the interval confirms automated C2 check-in rather than human-driven activity.",
+    "hint_context": "Use Sysmon EventID=3 filtered to the PowerShell process. Count connections by destination IP — repeated connections to the same external IP at regular intervals is the beaconing signature."
+  },
+  {
+    "id": "apt35_exec_06",
+    "phase": "execute",
+    "order": 9,
+    "question": "Identify credential access activity on the endpoint. Write an SPL query and explain what credentials APT35 was targeting.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=10 queried",
+      "LSASS access identified",
+      "GrantedAccess value noted",
+      "credential dumping objective identified",
+      "T1003.001 OS Credential Dumping referenced"
+    ],
+    "guidance": "Search Sysmon EventID=10 where TargetImage contains lsass.exe. The GrantedAccess field shows what access rights were requested — 0x1010 is a common credential dumping access mask. APT35 dumps credentials to harvest domain accounts, which they use to pivot to other systems and access additional M365 mailboxes without triggering OAuth consent flows.",
+    "model_answer": "SPL: index=ghosttrace_apt35 sourcetype=Sysmon EventID=10 TargetImage=*lsass* | table EventTime, Computer, SourceImage, SourceProcessId, GrantedAccess, CallTrace\n\nFindings: The malicious binary (svchost32.exe or similar masquerading binary) in C:\\Windows\\Temp accessed lsass.exe with GrantedAccess 0x1010. This is T1003.001 — OS Credential Dumping: LSASS Memory. APT35 harvests domain credentials here to enable pass-the-hash lateral movement and to access additional M365 accounts using harvested credentials, bypassing the need for individual OAuth consent on each target mailbox.",
+    "hint_context": "Search Sysmon EventID=10 for LSASS access. The GrantedAccess value of 0x1010 is the classic credential dumping signature. What malicious binary is accessing LSASS?"
+  },
+  {
+    "id": "apt35_exec_07",
+    "phase": "execute",
+    "order": 10,
+    "question": "Build a complete attack timeline correlating the cloud identity activity with the endpoint compromise. List key events chronologically.",
+    "requires_spl": false,
+    "expected_elements": [
+      "phishing email delivery identified as initial event",
+      "credential harvest or OAuth consent placed early in chain",
+      "mailbox forwarding rule creation placed in timeline",
+      "endpoint execution chain placed correctly",
+      "C2 communication placed after execution",
+      "credential dumping placed in timeline",
+      "timestamps referenced across both environments"
+    ],
+    "guidance": "Correlate the timestamps across your Azure AD, O365, and Sysmon findings. The typical APT35 chain is: phishing lure delivered → user clicks → credential harvested or OAuth consent granted → mailbox forwarding rule created → if document-based: macro executes PowerShell → payload dropped → C2 established → LSASS dumped → lateral movement. Map your evidence to this chain.",
+    "model_answer": "Attack timeline: (1) Phishing email delivered to target mailbox containing malicious attachment or credential harvest link; (2) Azure AD sign-in from anomalous geography — credential theft confirmed; (3) OAuth application consent granted — persistent mailbox access established without credentials; (4) New-InboxRule created forwarding all email to external address — ongoing email collection begins; (5) User opens malicious Word attachment — WINWORD.EXE spawns encoded PowerShell; (6) Payload dropped to C:\\Windows\\Temp\\svchost32.exe; (7) C2 beaconing begins to external IP on port 443; (8) LSASS accessed — domain credentials harvested; (9) Lateral movement initiated via pass-the-hash. Cloud and endpoint compromise appear to have occurred within the same session, suggesting coordinated access.",
+    "hint_context": "Line up your timestamps across Azure AD, O365, and Sysmon. The cloud access and the endpoint execution should correlate — they may have happened close together or the cloud access may have preceded the endpoint compromise by hours."
+  },
+  {
+    "id": "apt35_exec_08",
+    "phase": "execute",
+    "order": 11,
+    "question": "Is this a true positive? Justify your conclusion with specific evidence from both cloud and endpoint telemetry.",
+    "requires_spl": false,
+    "expected_elements": [
+      "definitive true positive conclusion",
+      "anomalous sign-in geography cited",
+      "OAuth consent to suspicious app cited",
+      "mailbox forwarding rule cited",
+      "malicious macro execution cited",
+      "LSASS access cited",
+      "no legitimate business justification"
+    ],
+    "guidance": "Consider each indicator: anomalous sign-in, OAuth consent, forwarding rule, macro execution, C2 beaconing, LSASS access. Does any single indicator have a legitimate explanation? Does the combination have one? A true positive requires multiple corroborating indicators with no plausible legitimate business explanation.",
+    "model_answer": "True positive — confirmed with high confidence. Supporting evidence: (1) Sign-in from anomalous geography inconsistent with user's normal pattern; (2) OAuth consent granted to an unrecognised third-party application with Mail.Read/Write permissions; (3) Inbox forwarding rule created to external personal email address — no legitimate business justification; (4) WINWORD.EXE spawning encoded PowerShell with evasion flags — no legitimate Office macro does this; (5) Repeated C2 beaconing from powershell.exe to a recently registered external domain; (6) LSASS access from a binary masquerading as a system process in C:\\Windows\\Temp. No legitimate business scenario explains the combination of these indicators. This is an active APT35 intrusion with both cloud identity compromise and endpoint execution.",
+    "hint_context": "Ask yourself: is there any legitimate business reason for an inbox forwarding rule to a personal Gmail address, combined with Office spawning encoded PowerShell and LSASS being accessed by a binary in C:\\Windows\\Temp?"
+  },
+  {
+    "id": "apt35_report_01",
+    "phase": "report",
+    "order": 12,
+    "question": "What is the confirmed scope of the intrusion? Which accounts, mailboxes, cloud resources, and endpoints were affected?",
+    "requires_spl": false,
+    "expected_elements": [
+      "compromised user account identified",
+      "affected mailbox identified",
+      "OAuth app with persistent access identified",
+      "forwarding rule destination noted",
+      "endpoint hostname identified",
+      "potential lateral movement targets assessed"
+    ],
+    "guidance": "Review all evidence to characterise the full scope. Which account was initially compromised? What does the OAuth app still have access to? What emails have been forwarded since the rule was created? Which endpoint was compromised and what credentials were stolen from LSASS that could extend the scope?",
+    "model_answer": "Confirmed scope: (1) Primary compromised account — admin or high-value user identified in Azure AD sign-in logs; (2) Mailbox fully accessible via OAuth app — all email from rule creation date onwards forwarded to external address; (3) OAuth application retains persistent access until revoked — survives password reset; (4) Endpoint WKSTN-[hostname] fully compromised — implant active, C2 established; (5) Domain credentials harvested from LSASS — all accounts cached on endpoint at risk; (6) Potential lateral movement to SRV-DC01 via pass-the-hash based on psexec activity. Data at risk includes all email content, calendar data, and any documents shared via the compromised account.",
+    "hint_context": "Think beyond the initial compromise. The OAuth app still has access even if you reset the password. The forwarded emails are already exfiltrated. The credentials from LSASS could be used anywhere in the domain."
+  },
+  {
+    "id": "apt35_report_02",
+    "phase": "report",
+    "order": 13,
+    "question": "Map all confirmed activity to MITRE ATT&CK techniques. List the technique IDs and names with brief evidence summaries.",
+    "requires_spl": false,
+    "expected_elements": [
+      "T1566.001 or T1566.002 Phishing referenced",
+      "T1528 Steal Application Access Token referenced",
+      "T1114.002 Email Forwarding Rule referenced",
+      "T1059.001 PowerShell referenced",
+      "T1003.001 LSASS Memory referenced",
+      "T1071.001 Web Protocols C2 referenced",
+      "T1078 Valid Accounts referenced"
+    ],
+    "guidance": "Go through each stage of the attack chain and map to ATT&CK. APT35 uses several identity-specific techniques not common in endpoint-focused groups — make sure to include the M365 and OAuth techniques.",
+    "model_answer": "ATT&CK mapping: T1566.001 Spearphishing Attachment — malicious Word document delivered via email; T1528 Steal Application Access Token — OAuth consent granted to malicious app; T1114.002 Email Forwarding Rule — inbox rule forwarding to external address; T1078 Valid Accounts — compromised credentials used for Azure AD sign-in; T1556.006 Modify Authentication Process — conditional access bypass or MFA manipulation; T1059.001 PowerShell — encoded PowerShell execution from Word macro; T1027 Obfuscated Files or Information — -Enc flag used for payload delivery; T1071.001 Application Layer Protocol: Web Protocols — C2 beaconing over HTTPS; T1003.001 OS Credential Dumping: LSASS Memory — LSASS accessed by malicious binary; T1021.002 SMB/Windows Admin Shares — lateral movement via psexec.",
+    "hint_context": "Cover both the cloud identity techniques and the endpoint techniques. APT35 has a broad TTP set spanning initial access through credential theft."
+  },
+  {
+    "id": "apt35_report_03",
+    "phase": "report",
+    "order": 14,
+    "question": "What visibility gaps did you identify? What additional telemetry would have improved early detection of this intrusion?",
+    "requires_spl": false,
+    "expected_elements": [
+      "at least one gap clearly identified",
+      "email gateway logs mentioned",
+      "DNS logging mentioned",
+      "OAuth app consent alerting mentioned",
+      "impossible travel detection mentioned"
+    ],
+    "guidance": "Think about where in the attack chain you had limited or no visibility. Could you see the phishing email delivery? Did you have DNS logging to track C2 resolution? Were there alerts on OAuth consent events? Would impossible travel detection have flagged the anomalous sign-in earlier?",
+    "model_answer": "Visibility gaps: (1) No email gateway telemetry — could not observe the phishing lure or determine how many users received it; (2) No DNS logging — C2 domain resolution not visible, making it harder to identify the full C2 infrastructure; (3) No OAuth consent alerting — the malicious app grant was not alerted on at time of consent; (4) No impossible travel detection — the anomalous geography sign-in was not automatically flagged; (5) No network proxy logs — HTTPS C2 traffic content not inspectable. Improvements: deploy Microsoft Defender for Cloud Apps for OAuth app governance, enable Azure AD Identity Protection for impossible travel, implement DNS logging with threat intelligence enrichment.",
+    "hint_context": "Where did you have to work hardest to find the evidence? Those are your gaps. What would have flagged this activity automatically?"
+  },
+  {
+    "id": "apt35_report_04",
+    "phase": "report",
+    "order": 15,
+    "question": "Write an SPL detection query to alert on suspicious OAuth application consent events targeting high-privilege mail permissions. Explain the logic and false positive considerations.",
+    "requires_spl": true,
+    "expected_elements": [
+      "azure:aad:audit sourcetype used",
+      "Consent to application operation targeted",
+      "Mail.Read or Mail.ReadWrite permissions filtered",
+      "logic explained clearly",
+      "false positive considerations mentioned"
+    ],
+    "guidance": "The key indicator is an OAuth consent event where the granted permissions include Mail.Read or Mail.ReadWrite. Search azure:aad:audit for 'Consent to application' and filter for mail-related permission scopes in the modifiedProperties field. False positives include legitimate IT-approved apps like email clients or productivity tools — consider a whitelist approach.",
+    "model_answer": "SPL: index=* sourcetype=\"azure:aad:audit\" operationName=\"Consent to application\" | eval permissions=mvjoin('properties.targetResources{}.modifiedProperties{}.newValue', \" \") | where match(permissions, \"Mail\\\\.Read|Mail\\\\.ReadWrite|Mail\\\\.Send\") | table _time, properties.initiatedBy.user.userPrincipalName, properties.targetResources{}.displayName, permissions\n\nLogic: Fires when a user consents to an OAuth application requesting any Mail.* permissions. These permissions grant the app persistent access to the user's mailbox.\n\nFalse positives: Legitimate mail clients (Outlook mobile, approved third-party tools) will trigger this. Maintain a whitelist of approved app IDs and suppress known-good apps. Alert only on net-new app IDs not in the approved list.",
+    "hint_context": "The detection logic needs to find OAuth consent events where the permissions include something Mail-related. How would you extract the permissions from the audit log fields and filter for the dangerous ones?"
+  },
+  {
+    "id": "apt35_report_05",
+    "phase": "report",
+    "order": 16,
+    "question": "What are your recommended follow-on actions? What should be escalated to incident response and what additional hunting should be conducted?",
+    "requires_spl": false,
+    "expected_elements": [
+      "IR escalation recommended",
+      "OAuth app revocation recommended",
+      "forwarding rule removal recommended",
+      "password reset and session revocation mentioned",
+      "endpoint isolation mentioned",
+      "follow-on hunt for additional compromised accounts",
+      "email content review recommended"
+    ],
+    "guidance": "Address both the cloud identity layer and the endpoint simultaneously. The OAuth app must be revoked before anything else — it survives password resets. The forwarding rule must be removed. The endpoint must be isolated. Then expand the hunt to determine if other accounts were compromised.",
+    "model_answer": "Immediate actions: (1) Revoke the malicious OAuth application consent in Azure AD Enterprise Applications — this is the highest priority as it persists through password resets; (2) Remove the inbox forwarding rule from the compromised mailbox; (3) Isolate the compromised endpoint from the network; (4) Reset the compromised account password and revoke all active sessions (Revoke-AzureADUserAllRefreshToken); (5) Review all email forwarded to external address and assess data exposure. Follow-on hunting: (1) Hunt for the same OAuth app consent across all user accounts; (2) Hunt for other forwarding rules to external addresses across the tenant; (3) Hunt for other endpoints showing the same C2 beacon pattern; (4) Hunt for pass-the-hash activity using credentials stolen from LSASS. Escalation to IR: confirmed multi-stage intrusion with data exfiltration — escalate immediately.",
+    "hint_context": "The OAuth app revocation must happen first — it's the persistence mechanism that survives everything else. What else needs to happen in parallel to contain the intrusion?"
+  }
+]

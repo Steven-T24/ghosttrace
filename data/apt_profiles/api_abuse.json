@@ -1,0 +1,14 @@
+{
+  "id": "api_abuse",
+  "display_name": "API Abuse Campaign",
+  "attribution": "Unknown — suspected financially motivated threat actor",
+  "motivation": "Data theft and account takeover via REST API and OAuth token abuse",
+  "description": "A threat actor exploits weakly protected REST APIs and abuses OAuth 2.0 token flows to gain persistent access to corporate applications and data. They enumerate API endpoints, abuse misconfigured OAuth scopes, steal bearer tokens, and exfiltrate data via API calls that blend with legitimate traffic.",
+  "correct_ttps": [
+    "T1190", "T1550.001", "T1528", "T1059.009", "T1071.001",
+    "T1530", "T1041", "T1078.004", "T1098.001", "T1556"
+  ],
+  "data_sources": ["api:gateway", "oauth:audit", "azure:aad:signin", "aws:cloudtrail", "Sysmon"],
+  "difficulty": "hard",
+  "tags": ["api-abuse", "oauth", "bearer-token", "rest-api", "token-theft"]
+}

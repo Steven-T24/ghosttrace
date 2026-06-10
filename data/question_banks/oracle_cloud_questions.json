@@ -1,0 +1,224 @@
+[
+  {
+    "id": "oracle_plan_01",
+    "phase": "plan",
+    "order": 1,
+    "question": "Based on your threat intelligence research, what behaviour are you hunting for and in what environment? Define your hunt scope for this Oracle Cloud investigation.",
+    "requires_spl": false,
+    "expected_elements": [
+      "Oracle Cloud Infrastructure (OCI) environment mentioned",
+      "API key compromise or IAM abuse referenced",
+      "Object Storage access or data exfiltration mentioned",
+      "financial motivation or data theft referenced",
+      "specific OCI attack surface identified"
+    ],
+    "guidance": "This investigation covers Oracle Cloud Infrastructure (OCI). Research OCI's IAM model — it uses compartments, policies, and API keys differently to AWS. Threat actors targeting OCI commonly compromise API signing keys, abuse misconfigured IAM policies, and target Object Storage buckets containing sensitive data. Your scope covers OCI audit logs, identity events, and object storage access.",
+    "model_answer": "The hunt targets a financially motivated threat actor exploiting Oracle Cloud Infrastructure. The scope covers OCI IAM abuse via compromised API keys, Object Storage data exfiltration, and backdoor IAM user creation for persistence. Primary data sources are oci:audit for API calls and IAM changes, oci:objectstorage for data access events, and oci:identity for user/policy modifications. The hypothesis is that an attacker obtained OCI API signing keys, used them to enumerate resources, exfiltrated data from Object Storage, and created backdoor IAM users or API keys for persistent access.",
+    "hint_context": "OCI uses API signing keys (RSA key pairs) for authentication rather than access key IDs like AWS. Research how these can be stolen or misconfigured, and what an attacker can do with them."
+  },
+  {
+    "id": "oracle_plan_02",
+    "phase": "plan",
+    "order": 2,
+    "question": "What data sources will you prioritise in this investigation and why? List the relevant Splunk sourcetypes most significant to an OCI compromise.",
+    "requires_spl": false,
+    "expected_elements": [
+      "oci:audit sourcetype mentioned",
+      "oci:objectstorage mentioned",
+      "oci:identity mentioned",
+      "reasoning provided",
+      "OCI-specific terminology used"
+    ],
+    "guidance": "OCI audit logs (oci:audit) capture all API calls made to OCI services — this is your primary source for detecting malicious activity. Object Storage audit logs (oci:objectstorage) show GetObject and CopyObject calls indicating data access. Identity audit events (oci:identity) capture user creation, API key addition, and policy modifications. Think about what actions would show initial access, persistence, and data exfiltration.",
+    "model_answer": "Priority sources: (1) oci:audit — the primary OCI audit trail capturing all API calls including IAM operations, compartment traversal, and service interactions. Key fields: eventType, principalName, sourceIPAddress, requestAction; (2) oci:objectstorage — object-level access events showing GetObject, PutObject, and CopyObject operations against specific buckets; (3) oci:identity — IAM-specific events for user creation, API key management, policy creation, and group membership changes. Secondary: Sysmon on any endpoints with OCI CLI or SDK installed that may have been used to exfiltrate API keys.",
+    "hint_context": "OCI's audit log is comprehensive and covers all API calls. Think about what sequence of API calls an attacker would make: first they'd enumerate, then access data, then establish persistence."
+  },
+  {
+    "id": "oracle_plan_03",
+    "phase": "plan",
+    "order": 3,
+    "question": "What does normal OCI API activity look like versus what you would expect from a malicious actor? What assumptions are you taking into this investigation?",
+    "requires_spl": false,
+    "expected_elements": [
+      "normal OCI API baseline described",
+      "adversary deviations identified",
+      "API key compromise scenarios considered",
+      "assumptions stated",
+      "false positive risks considered"
+    ],
+    "guidance": "Normal OCI activity includes API calls from known corporate IP ranges, using named service accounts for automation, during business hours, accessing only resources relevant to the caller's function. Malicious deviations include: API calls from unknown IP ranges, enumeration of all compartments and resources, Object Storage access outside normal patterns, creation of new API keys or IAM users, and policy modifications. Consider that OCI APIs are often called by automated pipelines — distinguish automation from interactive attacker activity.",
+    "model_answer": "Normal OCI baseline: API calls from corporate IP ranges or known cloud NAT gateways, using service account principals for automation, accessing resources within their assigned compartment, during business hours, with consistent userAgent strings. Malicious deviations: API calls from residential or VPN IP ranges, broad ListCompartments/ListBuckets enumeration across all compartments, GetObject calls against sensitive buckets from unexpected principals, CreateUser or AddApiKey operations outside change windows, policy modifications granting broad permissions. Assumptions: (1) API keys should not be embedded in repositories or public-facing systems; (2) Object Storage buckets containing sensitive data should only be accessed by specific service accounts; (3) IAM changes require change management approval. False positive risk: legitimate admin activity, new automation pipelines, developer access to test environments.",
+    "hint_context": "Think about the difference between a service account making regular automated API calls and an attacker using a stolen API key. Enumeration breadth, source IP, and timing are your key differentiators."
+  },
+  {
+    "id": "oracle_exec_01",
+    "phase": "execute",
+    "order": 4,
+    "question": "Write an SPL query to identify OCI API enumeration activity in the ghosttrace_oracle_cloud index. What resources did the attacker enumerate?",
+    "requires_spl": true,
+    "expected_elements": [
+      "ghosttrace_oracle_cloud index queried",
+      "oci:audit sourcetype used",
+      "List* or Describe* operations identified",
+      "source IP noted as suspicious",
+      "breadth of enumeration characterised"
+    ],
+    "guidance": "Search oci:audit for List* operations — ListCompartments, ListBuckets, ListUsers, ListPolicies. A high volume of List operations from the same principal and IP in a short window indicates reconnaissance. Look at the principalName field to identify who is making the calls and sourceIPAddress to see where they're coming from.",
+    "model_answer": "SPL: index=ghosttrace_oracle_cloud sourcetype=\"oci:audit\" eventType=List* | stats count by eventType, principalName, sourceIPAddress | sort -count\n\nFindings: A service account principal made a high volume of List operations across multiple resource types (ListCompartments, ListBuckets, ListUsers, ListPolicies, ListInstances) from a single external IP address in a short timeframe. The breadth and speed of enumeration is inconsistent with normal automated pipeline activity and indicates an attacker mapping the OCI tenancy after obtaining API keys.",
+    "hint_context": "Look for List* API calls in the OCI audit log. Count them by principal and source IP. An attacker mapping the environment will touch many different resource types in quick succession."
+  },
+  {
+    "id": "oracle_exec_02",
+    "phase": "execute",
+    "order": 5,
+    "question": "Identify the Object Storage data access. Write an SPL query to find sensitive bucket access and describe what data was targeted.",
+    "requires_spl": true,
+    "expected_elements": [
+      "oci:objectstorage sourcetype used",
+      "GetObject operations identified",
+      "sensitive bucket name identified",
+      "object names noted",
+      "T1530 Data from Cloud Storage referenced"
+    ],
+    "guidance": "Search oci:objectstorage for GetObject operations. Look at the bucketName and objectName fields to identify what data was accessed. Sensitive buckets might be named after business functions (finance, hr, backup, db-exports). Multiple GetObject calls against the same bucket in a short window suggests bulk data harvesting.",
+    "model_answer": "SPL: index=ghosttrace_oracle_cloud sourcetype=\"oci:objectstorage\" requestAction=GetObject | stats count by bucketName, principalName, sourceIPAddress | sort -count\n\nFindings: Multiple GetObject operations against a bucket named 'corp-db-exports' or 'finance-data' from the same external IP that conducted the enumeration. Individual object names suggest database dumps, financial records, or credential files. The volume and breadth of access — multiple objects across a short timeframe — indicates bulk data exfiltration (T1530 — Data from Cloud Storage).",
+    "hint_context": "Search oci:objectstorage for GetObject. What bucket names suggest sensitive data? Database exports, finance files, and backup archives are high-value targets."
+  },
+  {
+    "id": "oracle_exec_03",
+    "phase": "execute",
+    "order": 6,
+    "question": "Identify the persistence mechanism. Write an SPL query to find backdoor IAM user creation or API key addition events.",
+    "requires_spl": true,
+    "expected_elements": [
+      "oci:identity sourcetype used",
+      "CreateUser or AddApiKey operation identified",
+      "backdoor account or key identified",
+      "actor performing the change identified",
+      "T1098 Account Manipulation referenced"
+    ],
+    "guidance": "Search oci:identity for CreateUser or AddApiKey operations. Attackers create backdoor IAM users or add API keys to existing high-privilege accounts to maintain access even if the initially compromised key is rotated. Look at who performed the action — if it's the same compromised service account from the enumeration phase, that confirms the attacker created the persistence mechanism.",
+    "model_answer": "SPL: index=ghosttrace_oracle_cloud sourcetype=\"oci:identity\" (eventType=CreateUser OR eventType=AddApiKey OR eventType=CreatePolicy) | table eventTime, eventType, principalName, sourceIPAddress, requestPayload\n\nFindings: The compromised service account principal created a new IAM user with an innocuous name (e.g. 'svc-monitoring' or 'backup-agent') and immediately added an API key to it. A new policy was also created granting this user broad permissions across all compartments. This is T1098 — Account Manipulation — establishing backdoor access that persists even if the originally compromised API key is rotated.",
+    "hint_context": "Search oci:identity for CreateUser and AddApiKey. Who performed the action? If it's the same compromised principal from your enumeration findings, the attacker is establishing persistence."
+  },
+  {
+    "id": "oracle_exec_04",
+    "phase": "execute",
+    "order": 7,
+    "question": "Correlate all OCI findings into a unified attack timeline. What was the initial access vector and how did the attacker progress from access to exfiltration?",
+    "requires_spl": false,
+    "expected_elements": [
+      "initial access via compromised API key identified",
+      "enumeration phase placed correctly",
+      "data access placed after enumeration",
+      "persistence mechanism placed at end",
+      "timestamps referenced",
+      "initial access vector assessed"
+    ],
+    "guidance": "Reconstruct the kill chain from your findings. How did the attacker get the API key? (Check for public repository exposure, endpoint compromise, or phishing.) Then map enumeration → data access → persistence in chronological order. The time between steps tells you about the attacker's methodology — automated tooling moves fast, manual activity has longer gaps.",
+    "model_answer": "Attack timeline: (1) Initial access — API signing key obtained, likely from exposed source code repository, misconfigured instance metadata, or endpoint compromise; (2) Enumeration — ListCompartments, ListBuckets, ListUsers, ListPolicies across full tenancy within minutes of first access; (3) Data staging assessment — GetObject calls against identified sensitive buckets pulling database exports and financial data; (4) Persistence establishment — CreateUser with new API key and broad policy attachment; (5) Continued access — backdoor account operational, original API key potentially rotated by victim without knowing about backdoor. Time between steps suggests automated tooling for enumeration transitioning to targeted manual access for data selection.",
+    "hint_context": "Look at the timestamps between your enumeration and data access events. Fast sequential activity suggests automated tooling. Think about how the attacker obtained the initial API key — was there any endpoint activity that might explain it?"
+  },
+  {
+    "id": "oracle_exec_05",
+    "phase": "execute",
+    "order": 8,
+    "question": "Is this a true positive? Justify your conclusion with specific evidence from the OCI audit logs.",
+    "requires_spl": false,
+    "expected_elements": [
+      "definitive true positive conclusion",
+      "enumeration from unexpected IP cited",
+      "sensitive data access cited",
+      "backdoor account creation cited",
+      "no legitimate business justification"
+    ],
+    "guidance": "Consider each indicator: enumeration from external IP, bulk data access to sensitive buckets, backdoor user creation. Does any single indicator have a legitimate explanation in isolation? Does the combination? A new IAM user created by a service account that also accessed sensitive data from an unknown IP has no legitimate business explanation.",
+    "model_answer": "True positive — confirmed with high confidence. Evidence: (1) Bulk List* enumeration across all OCI resource types from an external IP not associated with corporate infrastructure; (2) GetObject operations against sensitive buckets (database exports, financial data) from the same external IP; (3) CreateUser and AddApiKey operations performed by the compromised service account outside business hours and outside any change management window; (4) New policy created granting the backdoor account broad permissions — no legitimate service account would self-modify IAM policies to create additional privileged users. The combination of enumeration, data exfiltration, and persistence creation from an unknown external IP constitutes a confirmed OCI intrusion.",
+    "hint_context": "Ask yourself: would any legitimate business process involve a service account enumerating all resources, pulling database exports, and then creating a new admin user — all from the same unknown external IP?"
+  },
+  {
+    "id": "oracle_report_01",
+    "phase": "report",
+    "order": 9,
+    "question": "What is the confirmed scope of the OCI intrusion? Which compartments, buckets, and IAM resources were affected?",
+    "requires_spl": false,
+    "expected_elements": [
+      "compromised API key / principal identified",
+      "compartments accessed identified",
+      "buckets and objects accessed identified",
+      "backdoor user and API key identified",
+      "data at risk characterised"
+    ],
+    "guidance": "Scope the intrusion across all three dimensions: (1) what was accessed and potentially exfiltrated; (2) what persistence mechanisms were created; (3) what the overall blast radius is if the backdoor account is not yet revoked.",
+    "model_answer": "Confirmed scope: (1) Compromised principal — svc-deploy service account API key used as initial access vector; (2) Compartments accessed — all compartments enumerated, sensitive compartments (finance, hr, prod) specifically targeted; (3) Object Storage — corp-db-exports bucket: 3 database dump files accessed; finance-data bucket: quarterly financial reports accessed; (4) IAM persistence — backdoor user 'svc-monitoring' created with API key and all-compartments admin policy; (5) Data at risk — database dumps potentially containing PII, financial data, credentials. Backdoor account remains active and must be revoked immediately.",
+    "hint_context": "Cover all three aspects: what was taken, what persistence was left, and what the ongoing risk is if the backdoor isn't removed."
+  },
+  {
+    "id": "oracle_report_02",
+    "phase": "report",
+    "order": 10,
+    "question": "Map all confirmed activity to MITRE ATT&CK techniques. List the technique IDs and names.",
+    "requires_spl": false,
+    "expected_elements": [
+      "T1552.004 Private Keys referenced",
+      "T1530 Data from Cloud Storage referenced",
+      "T1098 Account Manipulation referenced",
+      "T1078.004 Cloud Accounts referenced",
+      "T1619 Cloud Storage Object Discovery referenced"
+    ],
+    "guidance": "OCI attacks have specific cloud-focused ATT&CK techniques. Make sure to include techniques specific to cloud IAM and storage rather than just generic ones.",
+    "model_answer": "ATT&CK mapping: T1552.004 Unsecured Credentials: Private Keys — API signing key obtained from exposed source; T1078.004 Valid Accounts: Cloud Accounts — compromised service account used for access; T1619 Cloud Storage Object Discovery — ListBuckets enumeration across tenancy; T1530 Data from Cloud Storage — GetObject bulk access to sensitive buckets; T1537 Transfer Data to Cloud Account — CopyObject to attacker-controlled storage if applicable; T1098 Account Manipulation — backdoor IAM user created; T1098.001 Additional Cloud Credentials — new API key added to backdoor account; T1548 Abuse Elevation Control Mechanism — broad IAM policy created.",
+    "hint_context": "Look at the cloud-specific ATT&CK techniques — there are dedicated techniques for cloud storage discovery, cloud account manipulation, and credential access specific to cloud environments."
+  },
+  {
+    "id": "oracle_report_03",
+    "phase": "report",
+    "order": 11,
+    "question": "What visibility gaps did you identify and what additional telemetry would have improved detection?",
+    "requires_spl": false,
+    "expected_elements": [
+      "at least one gap identified",
+      "OCI alerting on IAM changes mentioned",
+      "network egress monitoring mentioned",
+      "secret scanning for API keys mentioned",
+      "CSPM tool mentioned"
+    ],
+    "guidance": "Think about where you had limited visibility. Could you see where the API key came from originally? Did you have alerts on IAM changes? Was there any network-level monitoring of the data leaving OCI?",
+    "model_answer": "Visibility gaps: (1) No secret scanning on source code repositories — API key origin not determined; (2) No OCI Events alerting on IAM changes — backdoor user creation was not alerted at time of occurrence; (3) No network egress monitoring — volume of data exfiltrated cannot be confirmed; (4) No CSPM tool — misconfigured bucket policies not detected proactively; (5) No OCI Threat Intelligence integration. Improvements: implement OCI Events + Notifications for IAM operations, deploy a CSPM tool (e.g. Wiz, Prisma Cloud) for continuous misconfiguration detection, implement secret scanning in CI/CD pipelines, enable OCI VCN Flow Logs for network visibility.",
+    "hint_context": "Where did the API key come from? Could you tell? What would have alerted you to the IAM changes at the time they happened?"
+  },
+  {
+    "id": "oracle_report_04",
+    "phase": "report",
+    "order": 12,
+    "question": "Write an SPL detection query to alert on suspicious OCI IAM user creation or API key addition events. Explain the logic.",
+    "requires_spl": true,
+    "expected_elements": [
+      "oci:identity sourcetype used",
+      "CreateUser or AddApiKey targeted",
+      "logic explained",
+      "false positive considerations mentioned"
+    ],
+    "guidance": "The key indicator is IAM user creation or API key addition outside of approved change windows or by unexpected principals. Consider filtering by time of day and comparing the acting principal against a known list of approved admin accounts.",
+    "model_answer": "SPL: index=* sourcetype=\"oci:identity\" (eventType=CreateUser OR eventType=AddApiKey OR eventType=CreatePolicy) | eval hour=strftime(_time, \"%H\") | where NOT (hour>=8 AND hour<=18) OR NOT match(principalName, \"admin@corp|iam-automation@\") | table _time, eventType, principalName, sourceIPAddress, requestPayload\n\nLogic: Fires on IAM user creation, API key addition, or policy creation either outside business hours or by principals not in the approved admin list. Both conditions together reduce false positives while catching attacker activity.\n\nFalse positives: Legitimate after-hours admin work, new admin account onboarding. Tune the approved principal list and consider adding a change ticket correlation.",
+    "hint_context": "The detection should fire when IAM changes happen outside expected patterns — wrong time, wrong actor, or wrong source IP. How would you encode those expectations into SPL?"
+  },
+  {
+    "id": "oracle_report_05",
+    "phase": "report",
+    "order": 13,
+    "question": "What are your recommended follow-on actions to remediate the OCI intrusion and prevent recurrence?",
+    "requires_spl": false,
+    "expected_elements": [
+      "backdoor user deletion recommended",
+      "compromised API key rotation recommended",
+      "bucket policy review recommended",
+      "secret scanning recommendation",
+      "IR escalation mentioned",
+      "CSPM deployment mentioned"
+    ],
+    "guidance": "Address immediate containment first (revoke access), then remediation (remove persistence, rotate credentials), then longer-term hardening (prevent recurrence). The backdoor account must be the first priority.",
+    "model_answer": "Immediate actions: (1) Delete backdoor IAM user 'svc-monitoring' and revoke all associated API keys immediately; (2) Rotate the compromised svc-deploy API signing key; (3) Review and tighten IAM policies — apply least privilege to all service accounts; (4) Audit all Object Storage bucket policies for public or overly permissive access. Remediation: (5) Scan all source code repositories for exposed API keys using secret scanning tools; (6) Review all OCI audit logs for the past 90 days to identify any activity by the backdoor account; (7) Assess data exfiltration scope and initiate breach notification process if PII was exposed. Hardening: (8) Deploy CSPM for continuous OCI misconfiguration monitoring; (9) Implement OCI Events alerting for all IAM operations; (10) Enforce MFA for all human OCI console access; (11) Implement API key rotation policy with maximum 90-day validity.",
+    "hint_context": "Start with what needs to happen right now to stop the attacker's access, then work backwards through remediation and hardening."
+  }
+]

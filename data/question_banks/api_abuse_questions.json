@@ -1,0 +1,223 @@
+[
+  {
+    "id": "api_plan_01",
+    "phase": "plan",
+    "order": 1,
+    "question": "Based on your threat intelligence research, what behaviour are you hunting for and in what environment? Define your hunt scope for this API Abuse investigation.",
+    "requires_spl": false,
+    "expected_elements": [
+      "REST API and OAuth environment mentioned",
+      "token theft or bearer token abuse referenced",
+      "API enumeration referenced",
+      "financial motivation or data theft mentioned",
+      "API gateway as primary data source identified"
+    ],
+    "guidance": "API abuse investigations are different from traditional intrusions — the attacker uses the application's own API against it. Research OAuth 2.0 token flows: authorization code flow, client credentials, token refresh. Attackers steal bearer tokens (which bypass MFA entirely), enumerate undocumented API endpoints, and abuse misconfigured OAuth scopes to access data they shouldn't. Your primary data source is the API gateway access log alongside OAuth audit events.",
+    "model_answer": "The hunt targets a threat actor abusing REST APIs and OAuth tokens to access corporate data without traditional malware. The scope covers API gateway logs for abnormal request patterns, OAuth audit logs for token issuance and scope abuse, Azure AD sign-in logs for token replay activity, and CloudTrail for downstream AWS API abuse. The hypothesis is that an attacker obtained a valid OAuth bearer token (via phishing, token theft from browser, or leaked credential), used it to enumerate API endpoints, escalated scope permissions, and exfiltrated data via API calls blending with legitimate traffic.",
+    "hint_context": "OAuth bearer tokens are like skeleton keys — whoever has the token is authenticated. Research how they can be stolen: browser storage, network interception, phishing for authorization codes."
+  },
+  {
+    "id": "api_plan_02",
+    "phase": "plan",
+    "order": 2,
+    "question": "What data sources will you prioritise and why? What makes API abuse investigations uniquely challenging compared to endpoint investigations?",
+    "requires_spl": false,
+    "expected_elements": [
+      "api:gateway sourcetype mentioned",
+      "oauth:audit mentioned",
+      "azure:aad:signin mentioned",
+      "challenge of blending with legitimate traffic noted",
+      "reasoning provided"
+    ],
+    "guidance": "API abuse is hard to detect because the attacker uses valid tokens making legitimate-looking API calls. There's no malware, no unusual process execution — just API calls. The challenge is volume: APIs can receive millions of calls per day. Look for patterns that differentiate attacker behaviour: rapid enumeration of endpoints, accessing endpoints that don't match the token's normal usage pattern, unusual user-agent strings, calls at unusual hours, or accessing data outside the token owner's normal scope.",
+    "model_answer": "Priority sources: (1) api:gateway — the primary source showing every API call with endpoint, method, response code, source IP, and user-agent. Look for 403/404 spikes (enumeration), unusual endpoint access patterns, and high-volume GET requests; (2) oauth:audit — token issuance events, scope grants, token refresh patterns, and revocations; (3) azure:aad:signin — token replay from unusual locations or devices; (4) aws:cloudtrail — downstream API calls if cloud resources are targeted. Challenge: all activity uses valid tokens so it looks like legitimate user behaviour. Detection requires behavioural baselines — what's normal for this token/user, and what deviates from it.",
+    "hint_context": "The challenge is that everything looks legitimate. Think about what patterns distinguish an attacker using a stolen token from the legitimate user who owns that token."
+  },
+  {
+    "id": "api_plan_03",
+    "phase": "plan",
+    "order": 3,
+    "question": "What does normal API usage look like versus malicious API abuse? What baseline metrics would you establish before hunting?",
+    "requires_spl": false,
+    "expected_elements": [
+      "normal API usage baseline described",
+      "enumeration pattern described",
+      "token replay or reuse from new location noted",
+      "scope escalation noted",
+      "baseline metrics articulated"
+    ],
+    "guidance": "Before hunting, establish baselines: normal request volume per token per hour, normal endpoints accessed per user, normal user-agent strings, normal source IPs per token, normal response code distribution. Deviations from these baselines — sudden volume spike, new endpoint access, 404/403 spike from scanning, new IP — are your hunt leads.",
+    "model_answer": "Normal API baseline: consistent request volumes during business hours, known user-agent strings (mobile app, web app, SDK), requests to expected endpoints matching the token's scope, consistent source IPs per token, normal 2xx response rate >95%. Malicious deviations: burst of 404 responses from systematic endpoint enumeration, GET requests to admin or internal API paths not normally accessed, token used from a new IP/country not matching the user's profile, high-volume data extraction (paginated GET of all records), requests at unusual hours, generic/scripted user-agent strings (python-requests, curl, Postman). Baseline metrics to establish: p95 hourly request volume per token, unique endpoints per token per day, unique source IPs per token, 4xx error rate.",
+    "hint_context": "Think about what distinguishes a person using an app normally from someone scripting API calls to enumerate or exfiltrate. Volume, error rates, endpoint diversity, and timing are your differentiators."
+  },
+  {
+    "id": "api_exec_01",
+    "phase": "execute",
+    "order": 4,
+    "question": "Write an SPL query to identify API endpoint enumeration in the ghosttrace_api_abuse index. What pattern indicates scanning behaviour?",
+    "requires_spl": true,
+    "expected_elements": [
+      "ghosttrace_api_abuse index queried",
+      "api:gateway sourcetype used",
+      "404 or 403 response code spike identified",
+      "rapid sequential endpoint access noted",
+      "source IP or token identified as scanner"
+    ],
+    "guidance": "API enumeration produces a characteristic signature: a series of requests to non-existent or restricted endpoints generating 404 or 403 responses. Search api:gateway for high 4xx rates from a single source IP or token. Count 404s per source IP per time window — legitimate users rarely get 404s; scanners get many. Also look for sequential path traversal patterns (/api/v1/users, /api/v1/admin, /api/v1/internal).",
+    "model_answer": "SPL: index=ghosttrace_api_abuse sourcetype=\"api:gateway\" status>=400 status<500 | stats count as error_count by src_ip, token_id | where error_count > 20 | sort -error_count\n\nAlso: index=ghosttrace_api_abuse sourcetype=\"api:gateway\" | stats count by src_ip, uri_path | where count=1 AND like(uri_path, \"/api/%\") | stats count as unique_paths by src_ip | where unique_paths > 30 | sort -unique_paths\n\nFindings: A single source IP generated 50+ unique 404/403 responses across sequential API endpoint paths within a 10-minute window. The pattern shows systematic path traversal covering /api/v1/users, /api/v1/admin, /api/v1/internal, /api/v1/config — classic REST API enumeration. A valid bearer token was used, making this harder to detect on authentication logs alone.",
+    "hint_context": "Count 404 and 403 responses by source IP. A legitimate user rarely gets 404s — they know which endpoints exist. An attacker probing the API surface will generate many. Also look at the diversity of unique paths accessed."
+  },
+  {
+    "id": "api_exec_02",
+    "phase": "execute",
+    "order": 5,
+    "question": "Identify the OAuth token abuse. Write an SPL query to find token replay or scope escalation activity.",
+    "requires_spl": true,
+    "expected_elements": [
+      "oauth:audit sourcetype used",
+      "token used from new IP or location",
+      "scope escalation or unexpected scope grant noted",
+      "T1528 or T1550.001 referenced",
+      "token ID correlated across events"
+    ],
+    "guidance": "Search oauth:audit for tokens being used from new IPs or for scope grants that expand beyond the original authorization. Token replay from a different IP than the original issuance is a strong indicator. Also look for token refresh requests that request additional scopes beyond the original grant — this is a scope escalation attempt.",
+    "model_answer": "SPL: index=ghosttrace_api_abuse sourcetype=\"oauth:audit\" event_type=token_use | stats values(src_ip) as ips, values(scope) as scopes by token_id | where mvcount(ips) > 1\n\nFindings: A token originally issued to a user from corporate IP 10.x.x.x was subsequently used from an external IP in a different country. The token was used to make API calls to endpoints requiring higher-privilege scopes than the original grant. A token refresh request was made attempting to add 'admin:read' and 'data:export' scopes — scope escalation attempt (T1528). The token replay from a new IP with no corresponding user sign-in event in Azure AD confirms the token was stolen rather than the user travelling.",
+    "hint_context": "A legitimate token is usually used from consistent source IPs. If you see the same token used from two different countries or IP ranges simultaneously or sequentially, it's been stolen. Look at the scope fields too."
+  },
+  {
+    "id": "api_exec_03",
+    "phase": "execute",
+    "order": 6,
+    "question": "Identify the data exfiltration via API. Write an SPL query to quantify what data was accessed and extracted.",
+    "requires_spl": true,
+    "expected_elements": [
+      "api:gateway sourcetype used",
+      "bulk GET requests identified",
+      "response size or record count noted",
+      "specific endpoints/data types identified",
+      "T1530 or T1041 referenced"
+    ],
+    "guidance": "API data exfiltration is often done via paginated GET requests that walk through all records in a dataset. Look for GET requests to data endpoints with pagination parameters (page=1, page=2... or offset=0, offset=100...) from the suspicious token. Also look at response body sizes — large responses indicate bulk data retrieval. Endpoints like /api/v1/users, /api/v1/customers, /api/v1/records are high-value targets.",
+    "model_answer": "SPL: index=ghosttrace_api_abuse sourcetype=\"api:gateway\" method=GET token_id=<suspicious_token> | stats count, sum(response_bytes) as total_bytes, values(uri_path) as paths by src_ip | sort -total_bytes\n\nAlso: index=ghosttrace_api_abuse sourcetype=\"api:gateway\" token_id=<suspicious_token> uri_path=*/users* OR uri_path=*/customers* OR uri_path=*/records* | stats count by uri_path | sort -count\n\nFindings: Suspicious token made 450 sequential GET requests to /api/v1/customers with incrementing page parameter (page=1 through page=450), extracting an estimated 45,000 customer records totalling ~120MB of response data. This is T1530 — bulk API data extraction. The systematic pagination pattern and volume distinguish this from normal user interaction.",
+    "hint_context": "Look for paginated GET requests — page=1, page=2, page=3... from the same token. Count the total response bytes. That gives you an estimate of how much data was taken."
+  },
+  {
+    "id": "api_exec_04",
+    "phase": "execute",
+    "order": 7,
+    "question": "Correlate the API activity with any endpoint or cloud telemetry to establish the full attack chain.",
+    "requires_spl": true,
+    "expected_elements": [
+      "token origin correlated to endpoint",
+      "browser storage or credential access on endpoint",
+      "cloud API activity linked to stolen token",
+      "full chain from token theft to exfiltration described"
+    ],
+    "guidance": "The token had to come from somewhere. Check if any endpoint showed browser credential access (Sysmon EID=11 accessing browser profile directories) or memory access that might have extracted the token. Also check if the same attacker IP appears in any other log source — CloudTrail, Azure AD sign-ins — to build a fuller picture of the attacker's activity.",
+    "model_answer": "SPL endpoint correlation: index=ghosttrace_api_abuse sourcetype=Sysmon EventID=11 (TargetFilename=*Chrome*Login Data* OR TargetFilename=*Firefox*cookies.sqlite* OR TargetFilename=*Local Storage*) | table EventTime, Computer, Image, TargetFilename\n\nFindings: Browser credential store accessed by a suspicious process on WKSTN-BAKER prior to the token appearing in API logs from an external IP. This indicates the token was stolen from the browser's local storage on the endpoint. The attacker IP from the API logs also appears in CloudTrail making describe calls to AWS services — confirming the attacker is using the same infrastructure across multiple services. Full chain: endpoint browser storage accessed → OAuth token extracted → token replayed from external IP → API enumeration → bulk data extraction.",
+    "hint_context": "Where was the token stored before it was stolen? Browser local storage, cookies, and credential files are common OAuth token locations. Check Sysmon for access to browser profile directories."
+  },
+  {
+    "id": "api_exec_05",
+    "phase": "execute",
+    "order": 8,
+    "question": "Is this a true positive? What is the confidence level and what evidence would increase or decrease that confidence?",
+    "requires_spl": false,
+    "expected_elements": [
+      "true positive conclusion with confidence level",
+      "token replay from new IP cited",
+      "enumeration pattern cited",
+      "bulk data extraction cited",
+      "browser credential access cited",
+      "factors that would change confidence stated"
+    ],
+    "guidance": "API abuse investigations often have inherent uncertainty — legitimate users can behave oddly, and you may not have complete token provenance. State your confidence level and what evidence would change it. What would a definitive true positive look like? What would make this a false positive?",
+    "model_answer": "True positive — high confidence (85%). Evidence: (1) Token replayed from external IP inconsistent with user's profile — strong indicator; (2) 50+ 404 responses in 10 minutes — systematic enumeration, not user error; (3) 450 paginated requests to customer data endpoint — not human behaviour; (4) Browser credential store access on endpoint prior to external token use — establishes theft mechanism; (5) Same attacker IP in CloudTrail — confirms attacker infrastructure. Confidence reducers: no definitive confirmation the endpoint access stole this specific token; legitimate user could theoretically be travelling and using automation. Evidence that would increase to 95%: SIEM alert confirmation that the token's legitimate owner was active on corporate network simultaneously with external use (impossible to be in two places at once).",
+    "hint_context": "API abuse often has inherent uncertainty because valid tokens are used. Be honest about your confidence level and state what would confirm or deny the true positive."
+  },
+  {
+    "id": "api_report_01",
+    "phase": "report",
+    "order": 9,
+    "question": "What is the confirmed scope of the API abuse? What data was accessed and what is the business impact?",
+    "requires_spl": false,
+    "expected_elements": [
+      "token identified",
+      "data endpoints accessed quantified",
+      "volume of data extracted estimated",
+      "business impact assessed",
+      "breach notification obligation considered"
+    ],
+    "guidance": "Quantify the scope as precisely as possible: which token, which endpoints, how many records, what data types. The business impact section should address whether this constitutes a data breach requiring regulatory notification (GDPR, etc.) based on the data accessed.",
+    "model_answer": "Confirmed scope: (1) Compromised token — bearer token for user j.baker@corp.com, stolen from browser local storage on WKSTN-BAKER; (2) Enumeration — 50+ non-existent endpoints probed, API surface fully mapped; (3) Data accessed — /api/v1/customers: ~45,000 customer records including names, emails, and account numbers; /api/v1/users: internal user list including email addresses; (4) Estimated data volume — ~120MB extracted; (5) Business impact — 45,000 customer records constitutes a reportable data breach under GDPR Article 33, requiring notification to supervisory authority within 72 hours. Breach notification obligations should be assessed with legal counsel immediately.",
+    "hint_context": "Quantify the data breach precisely — number of records, data types, and whether personal data was involved. The regulatory notification question is important here."
+  },
+  {
+    "id": "api_report_02",
+    "phase": "report",
+    "order": 10,
+    "question": "Map all confirmed activity to MITRE ATT&CK techniques. Include the API and OAuth specific techniques.",
+    "requires_spl": false,
+    "expected_elements": [
+      "T1528 Steal Application Access Token referenced",
+      "T1550.001 Use Alternate Authentication Material referenced",
+      "T1190 or T1059.009 referenced",
+      "T1530 Data from Cloud Storage or equivalent referenced",
+      "T1071.001 referenced"
+    ],
+    "guidance": "API abuse maps to several specific ATT&CK techniques around token theft and abuse. Make sure to include the cloud and API specific techniques rather than generic ones.",
+    "model_answer": "T1528 Steal Application Access Token — OAuth bearer token stolen from browser local storage; T1550.001 Use Alternate Authentication Material: Application Access Token — stolen token replayed from attacker IP; T1059.009 Cloud API — API calls made using stolen token; T1190 Exploit Public-Facing Application — API enumeration to discover attack surface; T1071.001 Application Layer Protocol: Web Protocols — all API communication over HTTPS; T1530 Data from Cloud Storage — customer data exfiltrated via API; T1602 Data from Configuration Repository — API endpoint enumeration to map configuration; T1078.004 Valid Accounts: Cloud Accounts — token provides valid authenticated access.",
+    "hint_context": "T1528 and T1550.001 are the key techniques here — they're specifically about OAuth token theft and replay. Make sure these are in your mapping."
+  },
+  {
+    "id": "api_report_03",
+    "phase": "report",
+    "order": 11,
+    "question": "What detection gaps enabled this attack? What API security controls should be implemented?",
+    "requires_spl": false,
+    "expected_elements": [
+      "token binding or device binding gap mentioned",
+      "rate limiting gap noted",
+      "anomaly detection gap noted",
+      "browser security gap mentioned",
+      "API security controls recommended"
+    ],
+    "guidance": "API security has specific control gaps distinct from endpoint security. Token binding, rate limiting, API anomaly detection, and browser security (preventing token theft) are the key areas. Think about what controls would have detected or prevented the token theft and the subsequent abuse.",
+    "model_answer": "Detection gaps: (1) No token binding — tokens not bound to device or IP, enabling replay from any location; (2) No rate limiting on API endpoints — 450 paginated requests completed without throttling; (3) No API anomaly detection — bulk GET pattern not alerted; (4) No browser security policy — OAuth tokens stored in accessible local storage rather than HttpOnly cookies; (5) No 4xx spike alerting — enumeration 404s not detected. Recommended controls: (1) Implement token binding to device fingerprint; (2) Configure API rate limiting (max 60 requests/minute per token); (3) Deploy API security gateway with ML-based anomaly detection; (4) Implement DPoP (Demonstrating Proof of Possession) for OAuth tokens; (5) Enable browser Content Security Policy and Secure/HttpOnly cookie flags; (6) Alert on 4xx rates >10 per minute per token.",
+    "hint_context": "What would have stopped the token theft? What would have stopped the enumeration? What would have stopped the bulk extraction? Each stage has different controls."
+  },
+  {
+    "id": "api_report_04",
+    "phase": "report",
+    "order": 12,
+    "question": "Write an SPL detection query for bulk API data extraction. Explain the threshold logic and false positive considerations.",
+    "requires_spl": true,
+    "expected_elements": [
+      "api:gateway sourcetype used",
+      "pagination pattern detected",
+      "volume threshold defined",
+      "logic explained",
+      "false positive considerations mentioned"
+    ],
+    "guidance": "The detection needs to identify tokens making an unusually high number of requests to data endpoints within a time window. Paginated bulk extraction has a distinctive pattern: sequential page parameters increasing monotonically. Define a threshold that catches attacker behaviour while not alerting on legitimate bulk exports.",
+    "model_answer": "SPL: index=* sourcetype=\"api:gateway\" method=GET (uri_path=*/users* OR uri_path=*/customers* OR uri_path=*/records* OR uri_path=*/data*) | bucket span=1h _time | stats count as request_count, sum(response_bytes) as total_bytes by _time, token_id, src_ip | where request_count > 100 OR total_bytes > 10000000 | table _time, token_id, src_ip, request_count, total_bytes\n\nLogic: Fires when a token makes more than 100 GET requests to data endpoints in one hour, or transfers more than 10MB of response data. Both thresholds independently trigger.\n\nFalse positives: Legitimate batch processes, data warehouse ETL jobs, and reporting pipelines. Maintain a whitelist of service account tokens used for legitimate bulk operations and suppress them.",
+    "hint_context": "Set thresholds based on what's normal for your environment. 100 requests per hour to data endpoints might be fine for a reporting system but suspicious for a user token."
+  },
+  {
+    "id": "api_report_05",
+    "phase": "report",
+    "order": 13,
+    "question": "What are your recommended follow-on actions including token revocation, breach notification, and API security hardening?",
+    "requires_spl": false,
+    "expected_elements": [
+      "token revocation as immediate action",
+      "breach notification timeline mentioned",
+      "affected users notification mentioned",
+      "API security hardening recommended",
+      "token theft root cause remediation mentioned"
+    ],
+    "guidance": "API abuse response has a unique element — breach notification obligations. If personal data was exfiltrated via the API, GDPR/relevant regulations may require notification within specific timeframes. Balance IR response with legal obligations.",
+    "model_answer": "Immediate (0-4 hours): (1) Revoke compromised bearer token and all tokens issued to j.baker; (2) Force re-authentication for all active sessions; (3) Isolate WKSTN-BAKER for forensic investigation of browser credential theft; (4) Engage legal counsel on breach notification obligations. Short-term (24-72 hours): (5) File GDPR breach notification to supervisory authority within 72-hour window if personal data confirmed exfiltrated; (6) Assess whether affected customers require direct notification; (7) Implement temporary rate limiting on data APIs. Hardening (1-4 weeks): (8) Implement DPoP token binding; (9) Deploy API security gateway with anomaly detection; (10) Enforce HttpOnly/Secure cookie flags for token storage; (11) Implement browser endpoint detection for credential store access; (12) Conduct API security assessment of all public-facing endpoints.",
+    "hint_context": "The 72-hour GDPR notification clock starts when you confirm personal data was exfiltrated. Make sure your immediate actions include engaging legal counsel alongside the technical response."
+  }
+]

@@ -1,0 +1,14 @@
+{
+  "id": "oracle_cloud",
+  "display_name": "Oracle Cloud Intrusion",
+  "attribution": "Unknown — likely financially motivated threat actor",
+  "motivation": "Data theft and financial fraud via Oracle Cloud Infrastructure (OCI) abuse",
+  "description": "A financially motivated threat actor exploits misconfigured OCI IAM policies and compromised API keys to gain persistent access to Oracle Cloud tenancies. They abuse Object Storage, exfiltrate sensitive data, and create backdoor IAM users for persistent access.",
+  "correct_ttps": [
+    "T1552.004", "T1098", "T1530", "T1537", "T1078.004",
+    "T1190", "T1059.001", "T1071.001", "T1003.001", "T1548"
+  ],
+  "data_sources": ["oci:audit", "oci:objectstorage", "oci:identity", "Sysmon", "WinEventLog:Security"],
+  "difficulty": "medium",
+  "tags": ["oracle-cloud", "oci", "iam-abuse", "data-exfiltration", "api-keys"]
+}

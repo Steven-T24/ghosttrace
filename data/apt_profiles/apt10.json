@@ -1,0 +1,14 @@
+{
+  "id": "apt10",
+  "display_name": "APT10 (MenuPass)",
+  "attribution": "China — Ministry of State Security (MSS)",
+  "motivation": "Espionage — targeting managed service providers to pivot into client networks",
+  "description": "APT10 is a Chinese state-sponsored group that targets managed service providers (MSPs) as a vector to compromise their downstream clients. They abuse legitimate remote management tools, steal credentials from MSP infrastructure, and pivot across multiple cloud environments using stolen API keys and service account credentials.",
+  "correct_ttps": [
+    "T1199", "T1078", "T1021.001", "T1059.001", "T1003.001",
+    "T1071.001", "T1547.001", "T1530", "T1537", "T1098"
+  ],
+  "data_sources": ["aws:cloudtrail", "azure:aad:audit", "Sysmon", "WinEventLog:Security", "WinEventLog:Microsoft-Windows-PowerShell/Operational"],
+  "difficulty": "hard",
+  "tags": ["msp", "supply-chain", "multi-cloud", "lateral-movement", "trusted-relationship"]
+}

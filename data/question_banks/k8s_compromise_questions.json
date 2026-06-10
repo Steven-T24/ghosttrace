@@ -1,0 +1,260 @@
+[
+  {
+    "id": "k8s_plan_01",
+    "phase": "plan",
+    "order": 1,
+    "question": "Based on your threat intelligence research, what behaviour are you hunting for and in what environment? Define your hunt scope for this Kubernetes compromise investigation.",
+    "requires_spl": false,
+    "expected_elements": [
+      "Kubernetes environment mentioned",
+      "API server exposure or vulnerable workload as initial access",
+      "RBAC abuse or privilege escalation referenced",
+      "cryptomining or data theft mentioned",
+      "container runtime telemetry mentioned"
+    ],
+    "guidance": "Kubernetes attacks are fundamentally different from traditional server compromises. Research the K8s attack surface: the API server (kubectl), etcd (stores all secrets), the kubelet API, and container images. Common attack vectors include exposed API servers with misconfigured RBAC, compromised container images, and exploitation of vulnerable workloads to escape into the node. Your primary evidence sources are K8s audit logs (kubernetes:audit) and container runtime security events (container:runtime, like Falco output).",
+    "model_answer": "The hunt targets a threat actor who compromised a Kubernetes cluster through an exposed API server or vulnerable workload. Scope covers K8s API server audit logs for RBAC abuse and secret access, container runtime logs for malicious container deployment and cryptomining, and AWS CloudTrail for cloud resource abuse via stolen service account tokens. The hypothesis is that an attacker exploited a misconfigured K8s API server or vulnerable pod, used RBAC escalation to gain cluster-admin, accessed etcd secrets, deployed cryptomining containers, and used mounted service account tokens to pivot to AWS.",
+    "hint_context": "Kubernetes has multiple attack surfaces. Research the K8s attack matrix — the API server, etcd, kubelet, and container images each have different vulnerabilities. What would an attacker target first?"
+  },
+  {
+    "id": "k8s_plan_02",
+    "phase": "plan",
+    "order": 2,
+    "question": "What data sources will you prioritise and why? What unique challenges do Kubernetes environments present for threat hunting?",
+    "requires_spl": false,
+    "expected_elements": [
+      "kubernetes:audit sourcetype mentioned",
+      "container:runtime mentioned",
+      "aws:cloudtrail mentioned for cloud pivot",
+      "ephemeral container challenge noted",
+      "reasoning provided"
+    ],
+    "guidance": "K8s hunting has unique challenges: containers are ephemeral (they disappear after compromise), the API server processes thousands of legitimate requests per minute, and RBAC complexity makes it hard to define 'normal'. K8s audit logs record all API server interactions — the key is filtering the signal from thousands of legitimate kubectl operations. Container runtime logs (Falco) capture suspicious process execution inside containers.",
+    "model_answer": "Priority sources: (1) kubernetes:audit — records all interactions with the K8s API server: pod creation, secret access, RBAC changes, exec commands. Critical for detecting privilege escalation and secret theft; (2) container:runtime — Falco-style runtime security events capturing suspicious process execution inside containers (shell spawned in pod, crypto miner processes, network connections from containers); (3) aws:cloudtrail — if the cluster is on EKS or pods have AWS credentials via IRSA, CloudTrail shows cloud API abuse; (4) Node-level Sysmon — if available, captures process execution on the underlying node. Challenges: container ephemerality means evidence may be gone; high API server volume requires precise filtering; RBAC complexity makes 'normal' hard to define.",
+    "hint_context": "Kubernetes audit logs are noisy — thousands of legitimate API calls per minute. Think about what specific API verbs and resources would indicate malicious activity versus normal cluster operations."
+  },
+  {
+    "id": "k8s_plan_03",
+    "phase": "plan",
+    "order": 3,
+    "question": "What does normal Kubernetes API activity look like versus malicious activity? What RBAC concepts are critical to understand for this investigation?",
+    "requires_spl": false,
+    "expected_elements": [
+      "normal K8s API baseline described",
+      "RBAC explained correctly",
+      "privilege escalation paths described",
+      "cluster-admin risk noted",
+      "service account token abuse mentioned"
+    ],
+    "guidance": "Understanding K8s RBAC is essential: Roles and ClusterRoles define permissions, RoleBindings and ClusterRoleBindings assign them to subjects (users, service accounts). Privilege escalation in K8s means binding a high-privilege role to your identity. Normal activity: scheduled pod deployments, service account API calls scoped to their namespace, kubectl get/list operations from CI/CD pipelines. Malicious: creation of ClusterRoleBindings to cluster-admin, exec into running pods, secret listing across all namespaces, pod deployment with hostPath mounts or privileged:true.",
+    "model_answer": "Normal K8s baseline: pods deployed via CI/CD service accounts scoped to specific namespaces, kubectl operations from known admin IPs, service accounts making API calls scoped to their workload's needs, no exec into production pods. Malicious deviations: creating ClusterRoleBindings granting cluster-admin to a new service account (privilege escalation), exec commands into running pods (hands-on-keyboard in container), listing secrets across all namespaces (credential harvesting), deploying pods with privileged:true or hostPath mounts (container escape prep), creating pods in kube-system namespace. Critical RBAC concepts: cluster-admin is the highest privilege; service account tokens are auto-mounted in pods by default; any process running inside a pod with the default service account token can make API calls to the extent that token allows.",
+    "hint_context": "Focus on ClusterRoleBindings to cluster-admin and secret access across namespaces — these are the highest-value indicators of privilege escalation in Kubernetes."
+  },
+  {
+    "id": "k8s_exec_01",
+    "phase": "execute",
+    "order": 4,
+    "question": "Write an SPL query to identify suspicious Kubernetes API server activity in the ghosttrace_k8s_compromise index. What initial access or reconnaissance activity do you find?",
+    "requires_spl": true,
+    "expected_elements": [
+      "ghosttrace_k8s_compromise index queried",
+      "kubernetes:audit sourcetype used",
+      "anonymous or unexpected user making API calls",
+      "list/get operations on sensitive resources",
+      "source IP noted"
+    ],
+    "guidance": "Search kubernetes:audit for API calls that indicate reconnaissance: listing namespaces, listing pods across all namespaces, listing secrets. Pay attention to the user.username field — calls from 'system:anonymous' indicate an unauthenticated request to an exposed API server. Also look for unusual service account names making API calls to resources outside their expected scope.",
+    "model_answer": "SPL: index=ghosttrace_k8s_compromise sourcetype=\"kubernetes:audit\" | stats count by user.username, verb, resource, sourceIPs | sort -count\n\nAlso: index=ghosttrace_k8s_compromise sourcetype=\"kubernetes:audit\" user.username=system:anonymous | table requestReceivedTimestamp, verb, resource, objectRef.namespace, sourceIPs\n\nFindings: API calls from 'system:anonymous' (unauthenticated) successfully listing pods and namespaces — the API server is misconfigured to allow anonymous access. Additionally, a service account from the 'default' namespace making API calls to list secrets across all namespaces — exceeding its intended scope. Source IP for anonymous calls is an external IP range, confirming external exploitation of the exposed API server.",
+    "hint_context": "Look at the user.username field in K8s audit logs. 'system:anonymous' means unauthenticated access — the API server shouldn't be accepting those requests successfully. What resources are being listed?"
+  },
+  {
+    "id": "k8s_exec_02",
+    "phase": "execute",
+    "order": 5,
+    "question": "Identify privilege escalation via RBAC. Write an SPL query to find ClusterRoleBinding creation events granting high privileges.",
+    "requires_spl": true,
+    "expected_elements": [
+      "kubernetes:audit sourcetype used",
+      "ClusterRoleBindings resource targeted",
+      "cluster-admin role identified",
+      "subject adding themselves or new SA identified",
+      "T1098 referenced"
+    ],
+    "guidance": "Search kubernetes:audit for verb=create with resource=clusterrolebindings. Look at the requestObject field to see what role is being bound and to what subject. A ClusterRoleBinding to cluster-admin for a new service account or the anonymous user is a critical privilege escalation indicator. This is T1098 — Account Manipulation applied to Kubernetes.",
+    "model_answer": "SPL: index=ghosttrace_k8s_compromise sourcetype=\"kubernetes:audit\" verb=create resource=clusterrolebindings | table requestReceivedTimestamp, user.username, requestObject.roleRef.name, requestObject.subjects{}.name, requestObject.subjects{}.kind, sourceIPs\n\nFindings: A ClusterRoleBinding was created binding the 'cluster-admin' ClusterRole to a new service account named 'kube-monitor' in the default namespace. The binding was created by the compromised service account, escalating its privileges from scoped namespace access to full cluster-admin. This is T1098 — the attacker granted themselves cluster-admin to access secrets, modify any resource, and deploy workloads cluster-wide.",
+    "hint_context": "Search for ClusterRoleBinding creation with roleRef.name=cluster-admin. Who created it and what did they bind it to? This is the K8s equivalent of adding yourself to the Global Administrator role."
+  },
+  {
+    "id": "k8s_exec_03",
+    "phase": "execute",
+    "order": 6,
+    "question": "Identify Kubernetes secret access. Write an SPL query to find bulk secret listing or get operations and explain what secrets an attacker would target.",
+    "requires_spl": true,
+    "expected_elements": [
+      "kubernetes:audit sourcetype used",
+      "secrets resource targeted",
+      "bulk list or get operations identified",
+      "specific secret namespaces noted",
+      "T1552.007 referenced"
+    ],
+    "guidance": "Kubernetes secrets store credentials, API keys, TLS certificates, and service account tokens. An attacker with cluster-admin will list all secrets across all namespaces to harvest credentials. Search kubernetes:audit for verb=list or verb=get with resource=secrets. Pay attention to the namespace — kube-system secrets include infrastructure credentials; application namespaces contain service credentials.",
+    "model_answer": "SPL: index=ghosttrace_k8s_compromise sourcetype=\"kubernetes:audit\" resource=secrets (verb=list OR verb=get) | stats count by user.username, objectRef.namespace | sort -count\n\nFindings: The compromised cluster-admin service account listed secrets across all namespaces including kube-system (containing cloud provider credentials and TLS certificates), production (containing database passwords and API keys), and monitoring (containing metrics platform credentials). Total of 47 secrets accessed. This is T1552.007 — Container API: accessing K8s secrets to harvest credentials for further attacks. Cloud provider credentials in kube-system would enable pivot to AWS/GCP/Azure.",
+    "hint_context": "List secrets operations across namespaces is a critical indicator. What namespaces are most sensitive? kube-system contains infrastructure credentials; application namespaces contain service credentials."
+  },
+  {
+    "id": "k8s_exec_04",
+    "phase": "execute",
+    "order": 7,
+    "question": "Identify malicious container deployment and cryptomining activity. Write SPL queries using both Kubernetes audit and container runtime logs.",
+    "requires_spl": true,
+    "expected_elements": [
+      "kubernetes:audit pod creation identified",
+      "container:runtime cryptominer process identified",
+      "privileged container or unusual image noted",
+      "CPU-intensive process identified",
+      "T1496 referenced"
+    ],
+    "guidance": "Attackers deploy cryptomining containers as a revenue stream. Search kubernetes:audit for pod creation events with unusual images (mining pools, Docker Hub images from unknown sources, images with 'xmr', 'miner', or similar in the name). Container runtime logs (Falco) will capture the actual mining process execution — look for xmrig, minerd, or high-CPU processes spawned inside containers.",
+    "model_answer": "SPL K8s audit: index=ghosttrace_k8s_compromise sourcetype=\"kubernetes:audit\" verb=create resource=pods | eval image=json_extract(requestObject, \"$.spec.containers[0].image\") | where NOT match(image, \"corp-registry|approved-images\") | table requestReceivedTimestamp, user.username, objectRef.namespace, image\n\nSPL container runtime: index=ghosttrace_k8s_compromise sourcetype=\"container:runtime\" | search process_name=xmrig OR process_name=minerd OR cmdline=*xmr* OR cmdline=*monero* | table _time, container_id, pod_name, process_name, cmdline\n\nFindings: Pod 'kube-metrics-helper' deployed from Docker Hub image 'ubuntu:xmrig-latest' — not from the corporate registry. Container runtime logs show xmrig executing inside the container with Monero mining pool configuration. This is T1496 — Resource Hijacking: cryptomining using cluster compute resources.",
+    "hint_context": "Look for pod creation with images from Docker Hub or external registries rather than your corporate registry. Container runtime logs will show the actual mining process running inside the container."
+  },
+  {
+    "id": "k8s_exec_05",
+    "phase": "execute",
+    "order": 8,
+    "question": "Identify the cloud pivot via stolen service account tokens. Write an SPL query showing how the attacker used K8s secrets to access AWS.",
+    "requires_spl": true,
+    "expected_elements": [
+      "aws:cloudtrail sourcetype used",
+      "API calls from K8s cluster IP range",
+      "IAM credentials from K8s secrets used",
+      "AWS resource access identified",
+      "cloud pivot chain described"
+    ],
+    "guidance": "Kubernetes secrets often contain AWS IAM credentials (for EKS workloads, IRSA, or manually configured). After accessing K8s secrets, attackers use the harvested AWS credentials to pivot into AWS. Look in CloudTrail for API calls from the K8s cluster's IP range using credentials that match service account names from the secret access events.",
+    "model_answer": "SPL: index=ghosttrace_k8s_compromise sourcetype=\"aws:cloudtrail\" | where like(sourceIPAddress, \"10.10.%\") OR like(userIdentity.arn, \"*k8s*\") OR like(userIdentity.arn, \"*eks*\") | stats count by eventName, userIdentity.arn, sourceIPAddress | sort -count\n\nFindings: AWS API calls from K8s cluster internal IP range using IAM credentials that match the service account names harvested from K8s secrets. ListBuckets and GetObject calls against S3 buckets containing application data. The IAM credentials were obtained from the K8s secrets the attacker accessed in the previous stage. This confirms the cloud pivot: K8s secret access → AWS credential harvest → AWS API abuse.",
+    "hint_context": "Check CloudTrail for API calls from your K8s cluster's IP range. The credentials used should match service account names from the K8s secrets that were accessed. That's the pivot chain."
+  },
+  {
+    "id": "k8s_exec_06",
+    "phase": "execute",
+    "order": 9,
+    "question": "Build the complete Kubernetes attack timeline from initial access through cryptomining and cloud pivot.",
+    "requires_spl": false,
+    "expected_elements": [
+      "API server exposure as initial access",
+      "RBAC escalation placed correctly",
+      "secret access placed after escalation",
+      "cryptomining container deployment placed",
+      "cloud pivot placed after secret access",
+      "timestamps referenced"
+    ],
+    "guidance": "Reconstruct the full K8s kill chain. Start with the initial access vector (exposed API server or vulnerable pod), move through privilege escalation, secret harvesting, cryptomining deployment, and cloud pivot. K8s attacks often happen faster than traditional endpoint attacks because automation is built into the environment.",
+    "model_answer": "Timeline: (1) Anonymous API calls to exposed K8s API server — namespace and pod enumeration; (2) Pod exec into running application pod — foothold established inside cluster; (3) Service account token from pod used to make API calls; (4) ClusterRoleBinding created — privilege escalation to cluster-admin; (5) Secrets listed across all namespaces — 47 secrets harvested including AWS IAM credentials; (6) Cryptomining pod 'kube-metrics-helper' deployed in default namespace; (7) AWS CloudTrail: ListBuckets from cluster IP using harvested IAM credentials; (8) GetObject calls against S3 data buckets. Total elapsed time: ~45 minutes from first anonymous API call to cryptomining deployment. Cloud pivot occurred within minutes of secret access, demonstrating automated tooling.",
+    "hint_context": "K8s attacks can happen very fast because the attacker can automate using kubectl. Note the elapsed time between each stage — this tells you whether the attacker was using automated tools or manual commands."
+  },
+  {
+    "id": "k8s_exec_07",
+    "phase": "execute",
+    "order": 10,
+    "question": "Is this a true positive? What is the blast radius of this compromise?",
+    "requires_spl": false,
+    "expected_elements": [
+      "definitive true positive conclusion",
+      "anonymous API access cited",
+      "RBAC escalation cited",
+      "cryptomining cited",
+      "cloud pivot cited",
+      "blast radius characterised across K8s and AWS"
+    ],
+    "guidance": "Characterise the blast radius — not just the K8s cluster but all downstream systems that had credentials stored in K8s secrets. Every secret that was listed is potentially compromised. Every AWS IAM credential, database password, and API key in those secrets must be considered compromised.",
+    "model_answer": "True positive — confirmed with high confidence. Evidence: anonymous API access to exposed server, ClusterRoleBinding to cluster-admin created, 47 secrets accessed, cryptomining container running, AWS API abuse from cluster IP using harvested credentials. Blast radius: (1) Full K8s cluster compromised — cluster-admin access means every workload, secret, and configuration is potentially modified; (2) All 47 secrets must be considered compromised — database passwords, API keys, TLS certificates, AWS IAM credentials; (3) AWS S3 buckets accessed using harvested credentials — data exfiltration possible; (4) Any external systems that share credentials with the compromised K8s secrets are also at risk; (5) Cryptomining containers consuming cluster resources — operational impact. This is a critical severity incident requiring immediate response.",
+    "hint_context": "The blast radius extends beyond the K8s cluster to every system that shared credentials with the secrets that were accessed. How many systems are potentially affected?"
+  },
+  {
+    "id": "k8s_report_01",
+    "phase": "report",
+    "order": 11,
+    "question": "What is the confirmed scope and what credentials must be rotated as an immediate priority?",
+    "requires_spl": false,
+    "expected_elements": [
+      "all compromised secrets listed",
+      "AWS credentials rotation prioritised",
+      "database credentials rotation mentioned",
+      "TLS certificates mentioned",
+      "rotation priority order justified"
+    ],
+    "guidance": "Every secret that was listed must be treated as compromised. Create a prioritised rotation order based on the blast radius of each credential type: AWS IAM credentials (enables further cloud access) are highest priority, followed by database credentials (data exfiltration risk), then API keys, then TLS certificates.",
+    "model_answer": "Credentials requiring immediate rotation by priority: (1) AWS IAM credentials (CRITICAL) — active cloud access, already being abused in CloudTrail; (2) Database passwords in production namespace (HIGH) — direct data access risk; (3) External API keys (HIGH) — third-party service abuse risk; (4) Internal service credentials (MEDIUM) — lateral movement risk; (5) TLS certificates (MEDIUM) — MITM risk if compromised; (6) Monitoring platform credentials (LOW) — secondary system access. Total: 47 secrets across 8 namespaces. All must be rotated within 24 hours. AWS credentials must be rotated within the next 60 minutes — CloudTrail shows active abuse.",
+    "hint_context": "Prioritise credential rotation by the blast radius of abuse. AWS credentials enabling cloud access are most urgent; TLS certificates are less immediately critical."
+  },
+  {
+    "id": "k8s_report_02",
+    "phase": "report",
+    "order": 12,
+    "question": "Map all confirmed activity to MITRE ATT&CK techniques including the Kubernetes-specific techniques.",
+    "requires_spl": false,
+    "expected_elements": [
+      "T1190 Exploit Public-Facing Application referenced",
+      "T1610 Deploy Container referenced",
+      "T1613 Container and Resource Discovery referenced",
+      "T1552.007 Container API referenced",
+      "T1496 Resource Hijacking referenced",
+      "T1611 Escape to Host referenced if applicable"
+    ],
+    "guidance": "The MITRE ATT&CK framework has a Containers matrix with specific techniques for K8s attacks. Make sure to use the container-specific techniques (T1610, T1611, T1613) rather than generic ones.",
+    "model_answer": "T1190 Exploit Public-Facing Application — exposed K8s API server accessed anonymously; T1613 Container and Resource Discovery — namespace, pod, and secret enumeration; T1098 Account Manipulation — ClusterRoleBinding to cluster-admin; T1552.007 Unsecured Credentials: Container API — K8s secrets accessed; T1610 Deploy Container — cryptomining pod deployed; T1496 Resource Hijacking — xmrig cryptomining in deployed container; T1078.004 Valid Accounts: Cloud Accounts — harvested AWS credentials used; T1530 Data from Cloud Storage — S3 bucket access via stolen credentials; T1071.001 Application Layer Protocol — C2 communication from cryptominer to mining pool.",
+    "hint_context": "The ATT&CK Containers matrix has specific techniques for K8s attacks. T1610, T1611, T1613, and T1552.007 are the container-specific ones you should include."
+  },
+  {
+    "id": "k8s_report_03",
+    "phase": "report",
+    "order": 13,
+    "question": "What K8s security hardening recommendations would prevent this class of attack?",
+    "requires_spl": false,
+    "expected_elements": [
+      "API server exposure fix mentioned",
+      "RBAC least privilege mentioned",
+      "network policies mentioned",
+      "secret management improvement mentioned",
+      "admission control mentioned"
+    ],
+    "guidance": "K8s hardening has specific controls distinct from traditional server hardening. Focus on: API server access control, RBAC least privilege, secret management (external secret stores), network policies, and admission controllers that prevent privileged container deployment.",
+    "model_answer": "Immediate hardening: (1) Disable anonymous authentication on API server (--anonymous-auth=false); (2) Restrict API server network access to known admin IP ranges; (3) Implement RBAC audit — identify and remove all unnecessarily broad ClusterRoleBindings. Short-term: (4) Migrate secrets from K8s native secrets to HashiCorp Vault or AWS Secrets Manager — removes credentials from etcd; (5) Disable default service account token auto-mounting (automountServiceAccountToken: false); (6) Implement OPA Gatekeeper admission controller — block privileged containers, enforce image registry restrictions; (7) Deploy Falco for runtime security monitoring. Long-term: (8) Implement K8s network policies to restrict pod-to-pod communication; (9) Enable K8s audit log alerting for ClusterRoleBinding creation and secret bulk access; (10) Regular RBAC reviews and CIS Kubernetes Benchmark assessment.",
+    "hint_context": "K8s hardening starts with the API server (disable anonymous auth, restrict network access) and extends to RBAC, secrets management, and admission control. Which of these would have stopped each stage of the attack?"
+  },
+  {
+    "id": "k8s_report_04",
+    "phase": "report",
+    "order": 14,
+    "question": "Write an SPL detection query to alert on Kubernetes privilege escalation via ClusterRoleBinding creation. Explain the logic.",
+    "requires_spl": true,
+    "expected_elements": [
+      "kubernetes:audit sourcetype used",
+      "ClusterRoleBinding creation targeted",
+      "cluster-admin role filtered",
+      "logic explained",
+      "false positive considerations mentioned"
+    ],
+    "guidance": "The detection should fire on any creation of a ClusterRoleBinding that grants cluster-admin. This is a near-zero false positive detection in most environments — there are very few legitimate reasons to create new cluster-admin bindings outside of initial cluster setup.",
+    "model_answer": "SPL: index=* sourcetype=\"kubernetes:audit\" verb=create resource=clusterrolebindings | eval role=json_extract(requestObject, \"$.roleRef.name\") | where role=\"cluster-admin\" | table requestReceivedTimestamp, user.username, role, json_extract(requestObject, \"$.subjects\"), sourceIPs\n\nLogic: Fires on any creation of a ClusterRoleBinding binding the cluster-admin role to any subject. This is a near-zero false positive rule — creating new cluster-admin bindings is an extremely rare legitimate operation that should always go through change management.\n\nFalse positives: Initial cluster setup, legitimate admin onboarding. Suppress by correlating with approved change tickets. Consider alerting on ALL ClusterRoleBinding creation, not just cluster-admin, as any escalation is worth reviewing.",
+    "hint_context": "Creating a ClusterRoleBinding to cluster-admin outside of initial setup is almost always malicious. This is a high-fidelity detection — what false positives could you think of?"
+  },
+  {
+    "id": "k8s_report_05",
+    "phase": "report",
+    "order": 15,
+    "question": "What are your recommended immediate containment actions for the K8s compromise?",
+    "requires_spl": false,
+    "expected_elements": [
+      "malicious ClusterRoleBinding removal",
+      "cryptomining pod deletion",
+      "AWS credential rotation",
+      "API server access restriction",
+      "cluster integrity assessment mentioned"
+    ],
+    "guidance": "K8s containment must address multiple layers simultaneously: remove the attacker's privileged access (ClusterRoleBinding), stop the active cryptomining (delete the pod), rotate the compromised credentials, and restrict API server access to prevent re-entry.",
+    "model_answer": "Immediate containment (execute in parallel): (1) Delete malicious ClusterRoleBinding: kubectl delete clusterrolebinding <attacker-binding-name>; (2) Delete cryptomining pod: kubectl delete pod kube-metrics-helper -n default; (3) Rotate AWS IAM credentials harvested from K8s secrets — disable old keys, issue new; (4) Restrict API server network access to admin IP whitelist; (5) Enable anonymous-auth=false on API server if not already set. Assessment: (6) Audit all ClusterRoleBindings for any other unexpected bindings created during compromise window; (7) Review all pods deployed during compromise window for additional malicious workloads; (8) Assess etcd for integrity — if attacker had cluster-admin, etcd contents may have been modified; (9) Review all K8s audit logs for the full compromise window to identify any additional persistence mechanisms. Recovery: (10) Rotate all 47 compromised secrets in priority order; (11) Full cluster CIS benchmark assessment before returning to production.",
+    "hint_context": "What must happen right now to stop the attacker's active access? Removing the ClusterRoleBinding and deleting the mining pod are immediate. Then you need to understand the full scope before declaring containment."
+  }
+]

@@ -1,0 +1,14 @@
+{
+  "id": "k8s_compromise",
+  "display_name": "Kubernetes Cluster Compromise",
+  "attribution": "Unknown — suspected TeamTNT or similar cloud-focused criminal group",
+  "motivation": "Cryptomining, data theft, and persistent cloud infrastructure access",
+  "description": "A threat actor compromises a Kubernetes cluster through an exposed API server or vulnerable workload, escalates privileges via RBAC abuse, deploys malicious containers for cryptomining, and exfiltrates secrets from etcd and mounted service account tokens. Container runtime telemetry and Kubernetes audit logs are the primary evidence sources.",
+  "correct_ttps": [
+    "T1190", "T1610", "T1613", "T1552.007", "T1098",
+    "T1059.004", "T1071.001", "T1496", "T1530", "T1611"
+  ],
+  "data_sources": ["kubernetes:audit", "container:runtime", "aws:cloudtrail", "Sysmon"],
+  "difficulty": "hard",
+  "tags": ["kubernetes", "containers", "rbac-abuse", "cryptomining", "secrets-theft", "k8s"]
+}

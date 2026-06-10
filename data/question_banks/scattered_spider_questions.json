@@ -1,0 +1,246 @@
+[
+  {
+    "id": "ss_plan_01",
+    "phase": "plan",
+    "order": 1,
+    "question": "Based on your threat intelligence research, what behaviour are you hunting for and in what environment? Define your hunt scope for this Scattered Spider investigation.",
+    "requires_spl": false,
+    "expected_elements": [
+      "Azure AD identity attack referenced",
+      "social engineering or helpdesk manipulation mentioned",
+      "MFA bypass technique mentioned",
+      "ransomware or data theft motivation referenced",
+      "English-speaking Western group noted"
+    ],
+    "guidance": "Scattered Spider is unusual — they're an English-speaking Western cybercriminal group, not a nation-state. Research their methodology: they call helpdesks impersonating employees to get MFA reset or SIM swaps. Once they have MFA control, they use legitimate credentials to access Azure AD as a Global Administrator. Their end goal is typically ransomware deployment or data extortion. Your scope is Azure AD, M365, and endpoint telemetry.",
+    "model_answer": "Scattered Spider is a financially motivated cybercriminal collective known for social engineering corporate helpdesks to bypass MFA. The hunt scope covers Azure AD identity attacks including MFA manipulation, conditional access bypass, Global Administrator privilege escalation, and endpoint compromise for ransomware preparation. The hypothesis is that Scattered Spider socially engineered the helpdesk to reset MFA for a high-value account, used valid credentials to authenticate, escalated privileges, and is preparing for ransomware deployment or data exfiltration. Primary sources: azure:aad:signin, azure:aad:audit, o365:management, Sysmon.",
+    "hint_context": "Scattered Spider starts with a phone call to the helpdesk. Think about what happens in Azure AD after a successful social engineering attack — MFA reset, new sign-in, privilege escalation."
+  },
+  {
+    "id": "ss_plan_02",
+    "phase": "plan",
+    "order": 2,
+    "question": "What data sources will you prioritise and why? What makes Scattered Spider investigations different from nation-state identity attacks?",
+    "requires_spl": false,
+    "expected_elements": [
+      "azure:aad:signin mentioned",
+      "azure:aad:audit mentioned",
+      "helpdesk ticket system mentioned or considered",
+      "Sysmon mentioned",
+      "speed and aggression of Scattered Spider noted"
+    ],
+    "guidance": "Scattered Spider moves faster than nation-state actors — they go from initial access to ransomware deployment in hours, not days. This affects your investigation: the timeline is compressed and you may be investigating an active intrusion. They also make no attempt to hide their activity in Azure AD — they move aggressively because speed is their defence. Helpdesk ticket logs (if available) would show the social engineering call.",
+    "model_answer": "Priority sources: (1) azure:aad:audit — MFA method changes, role assignments, conditional access modifications are the highest-value indicators; (2) azure:aad:signin — authentication patterns, new device registrations, anomalous geographies; (3) o365:management — admin operations, mailbox access, data access; (4) Sysmon — endpoint execution chain for ransomware preparation (Cobalt Strike, file encryption tools, shadow copy deletion); (5) WinEventLog:Security — lateral movement authentication events. Scattered Spider differs from nation-state: faster tempo, less stealth, more aggressive privilege escalation, immediate ransomware or extortion.",
+    "hint_context": "Scattered Spider is loud and fast. They don't worry about stealth the way APT groups do — they want to encrypt before you can respond. What does fast, aggressive Azure AD activity look like?"
+  },
+  {
+    "id": "ss_plan_03",
+    "phase": "plan",
+    "order": 3,
+    "question": "What does the Scattered Spider attack chain look like from social engineering to ransomware deployment? What are your key hunt hypotheses?",
+    "requires_spl": false,
+    "expected_elements": [
+      "social engineering initial access described",
+      "MFA reset as enabler described",
+      "privilege escalation path described",
+      "ransomware preparation activities identified",
+      "hypothesis clearly stated"
+    ],
+    "guidance": "Map the Scattered Spider kill chain: (1) Social engineering call → helpdesk resets MFA for target account; (2) Attacker authenticates with valid creds + new MFA; (3) Disables conditional access policies; (4) Adds attacker account to Global Administrator; (5) Deploys remote access tool (AnyDesk/TeamViewer); (6) Lateral movement to file servers and backup systems; (7) Disables/deletes backups; (8) Deploys ransomware. Your hypotheses should cover this chain.",
+    "model_answer": "Scattered Spider kill chain: (1) Helpdesk social engineering — MFA reset for target account; (2) Authentication from new device/location; (3) Conditional access policy disabled to prevent future MFA challenges; (4) Attacker-controlled account added to Global Administrator for persistent privileged access; (5) AnyDesk or similar RAT deployed on endpoints; (6) Lateral movement to domain controllers, file servers, backup systems; (7) Shadow copies deleted, backup agents disabled; (8) Ransomware deployed across environment. Hunt hypotheses: H1 — MFA method was recently changed for a privileged account followed by sign-in from new location; H2 — Conditional access policies were modified outside change windows; H3 — New Global Admin account added; H4 — Shadow copies deleted from multiple endpoints simultaneously.",
+    "hint_context": "Map out the full Scattered Spider kill chain before you start hunting. Each stage leaves evidence in different log sources. Which stage would you detect first with your available data sources?"
+  },
+  {
+    "id": "ss_exec_01",
+    "phase": "execute",
+    "order": 4,
+    "question": "Write an SPL query to identify MFA method changes followed by sign-in from a new location in the ghosttrace_scattered_spider index.",
+    "requires_spl": true,
+    "expected_elements": [
+      "ghosttrace_scattered_spider index queried",
+      "azure:aad:audit sourcetype used for MFA changes",
+      "azure:aad:signin used for subsequent login",
+      "new location or device identified",
+      "target account correlated across both events"
+    ],
+    "guidance": "Search azure:aad:audit for 'Update user' or 'Update Authentication methods' operations that indicate an MFA method was changed or reset. Then correlate the affected user against azure:aad:signin to find the first sign-in after the MFA change. A sign-in from a new device registration ID or unusual geography shortly after an MFA reset is the Scattered Spider signature.",
+    "model_answer": "SPL: index=ghosttrace_scattered_spider sourcetype=\"azure:aad:audit\" (operationName=\"Update user\" OR operationName=\"Update Authentication methods\") | table time, properties.targetResources{}.userPrincipalName, properties.initiatedBy.user.userPrincipalName\n\nThen correlate: index=ghosttrace_scattered_spider sourcetype=\"azure:aad:signin\" properties.userPrincipalName=<affected_user> | table time, properties.ipAddress, properties.location.countryOrRegion, properties.deviceDetail.deviceId\n\nFindings: MFA method updated for an admin account by a helpdesk operator. Within minutes, a successful sign-in from a new device ID and anomalous geography. The new device had never previously authenticated to the tenant. This pattern — MFA reset followed immediately by new-device sign-in — is the Scattered Spider helpdesk social engineering signature.",
+    "hint_context": "Look for MFA method changes in Azure AD audit logs. Then check: who signed in with that account immediately after? Was it from a device that had authenticated before?"
+  },
+  {
+    "id": "ss_exec_02",
+    "phase": "execute",
+    "order": 5,
+    "question": "Identify the conditional access policy modifications and privilege escalation. Write SPL queries covering both activities.",
+    "requires_spl": true,
+    "expected_elements": [
+      "conditional access policy disabled identified",
+      "Global Administrator role assignment identified",
+      "actor performing changes identified",
+      "timing correlation noted",
+      "T1098 and T1556.006 referenced"
+    ],
+    "guidance": "Search azure:aad:audit for two operations in close succession: 'Update conditional access policy' (disabling MFA requirements) and 'Add member to role' targeting the Global Administrator role. These will be performed by the compromised admin account shortly after the initial sign-in. The speed of these changes — often within minutes of first access — is characteristic of Scattered Spider.",
+    "model_answer": "SPL: index=ghosttrace_scattered_spider sourcetype=\"azure:aad:audit\" (operationName=\"Update conditional access policy\" OR operationName=\"Add member to role\") | table time, operationName, properties.initiatedBy.user.userPrincipalName, properties.targetResources{}.displayName, properties.targetResources{}.modifiedProperties{}\n\nFindings: Compromised admin account disabled 'Require MFA for All Users' conditional access policy (T1556.006) — this prevents future MFA challenges for any account. Within minutes, the same account added an attacker-controlled account ('svc-helpdesk@corp.onmicrosoft.com' or similar) to the Global Administrator role (T1098). These two actions together give the attacker persistent privileged access that is MFA-free.",
+    "hint_context": "Look at what the compromised admin account did in the first 10-15 minutes after sign-in. Scattered Spider moves fast — disabling MFA and adding a GA account happen almost immediately."
+  },
+  {
+    "id": "ss_exec_03",
+    "phase": "execute",
+    "order": 6,
+    "question": "Identify the remote access tool deployment on endpoints. Write an SPL query and explain the significance of this stage in the attack chain.",
+    "requires_spl": true,
+    "expected_elements": [
+      "Sysmon EventID=1 queried",
+      "AnyDesk or TeamViewer or similar RAT identified",
+      "unusual installation context identified",
+      "persistence mechanism noted",
+      "T1219 Remote Access Software referenced"
+    ],
+    "guidance": "Search Sysmon EventID=1 for AnyDesk, TeamViewer, or similar remote access tools being installed outside of IT deployment channels. Legitimate IT deployments come from software distribution systems; Scattered Spider deploys these manually via command line after gaining admin access. The CommandLine field will show installation flags like --install or --start-with-win.",
+    "model_answer": "SPL: index=ghosttrace_scattered_spider sourcetype=Sysmon EventID=1 (Image=*AnyDesk* OR Image=*TeamViewer* OR Image=*ScreenConnect* OR CommandLine=*anydesk* OR CommandLine=*teamviewer*) | table EventTime, Computer, User, Image, CommandLine, ParentImage\n\nFindings: AnyDesk.exe executed with --install and --start-with-win flags from C:\\Users\\Public\\Downloads — not from a software distribution system. Parent process is cmd.exe spawned under an admin account. This is T1219 — Remote Access Software — deployed as a persistent backdoor. The --start-with-win flag ensures AnyDesk persists across reboots. At this stage, the attacker has a persistent interactive session on the endpoint independent of Azure AD access.",
+    "hint_context": "Search for AnyDesk or TeamViewer being installed from an unusual location with command-line flags. Legitimate IT deployments come from software deployment tools, not from C:\\Users\\Public\\Downloads via cmd.exe."
+  },
+  {
+    "id": "ss_exec_04",
+    "phase": "execute",
+    "order": 7,
+    "question": "Identify ransomware preparation activity. Write SPL queries to find shadow copy deletion and backup tampering events.",
+    "requires_spl": true,
+    "expected_elements": [
+      "vssadmin or wmic shadow copy deletion identified",
+      "WinEventLog:Security or Sysmon used",
+      "backup agent tampering identified",
+      "multiple hosts affected noted",
+      "T1490 Inhibit System Recovery referenced"
+    ],
+    "guidance": "Scattered Spider deletes shadow copies and disables backup agents before deploying ransomware to prevent recovery. Search Sysmon EID=1 for vssadmin delete shadows commands or wmic shadowcopy delete. Also look for backup agent services being stopped (net stop or sc stop against backup service names like VeeamBackupSvc, BackupExecAgentAccelerator). Multiple hosts showing this simultaneously indicates imminent ransomware deployment.",
+    "model_answer": "SPL shadow copy: index=ghosttrace_scattered_spider sourcetype=Sysmon EventID=1 (CommandLine=*vssadmin*delete*shadows* OR CommandLine=*wmic*shadowcopy*delete* OR CommandLine=*bcdedit*recoveryenabled*no*) | table EventTime, Computer, User, CommandLine\n\nSPL backup: index=ghosttrace_scattered_spider sourcetype=Sysmon EventID=1 (CommandLine=*net stop*backup* OR CommandLine=*sc stop*veeam* OR CommandLine=*net stop*sql*) | table EventTime, Computer, User, CommandLine\n\nFindings: vssadmin delete shadows /all /quiet executed across multiple endpoints within minutes of each other — coordinated via the attacker's remote access. Backup services stopped on file servers. This is T1490 — Inhibit System Recovery — removing recovery options before ransomware deployment. This is an active emergency — ransomware deployment is imminent or already underway.",
+    "hint_context": "vssadmin delete shadows and bcdedit /set recoveryenabled no are the clearest pre-ransomware indicators. When you see these on multiple hosts simultaneously, the clock is ticking."
+  },
+  {
+    "id": "ss_exec_05",
+    "phase": "execute",
+    "order": 8,
+    "question": "Build the complete attack timeline from helpdesk call to ransomware preparation. What is the total time elapsed?",
+    "requires_spl": false,
+    "expected_elements": [
+      "MFA reset as first event",
+      "initial sign-in from new device",
+      "conditional access disabled",
+      "GA account added",
+      "AnyDesk deployed",
+      "shadow copy deletion",
+      "total elapsed time noted",
+      "speed characterised as Scattered Spider signature"
+    ],
+    "guidance": "Reconstruct the full timeline and note the elapsed time between each stage. Scattered Spider typically achieves all of this in 2-6 hours. The compressed timeline is important for the report — it demonstrates the need for real-time alerting rather than post-incident investigation.",
+    "model_answer": "Timeline: T+0:00 — MFA method reset by helpdesk for target admin account; T+0:05 — First sign-in from new device ID, anomalous geography; T+0:08 — Conditional access policy 'Require MFA for All Users' disabled; T+0:11 — Attacker account svc-helpdesk added to Global Administrator role; T+0:45 — AnyDesk installed on first endpoint via admin share; T+1:20 — AnyDesk deployed to additional endpoints; T+2:15 — vssadmin delete shadows run across all endpoints; T+2:17 — Backup services stopped; T+2:22 — Ransomware execution begins (if caught at this point). Total elapsed: ~2.5 hours from initial access to ransomware. This timeline demonstrates that traditional next-day alert triage would be too late — real-time alerting on the MFA reset and CA policy change was the only viable detection window.",
+    "hint_context": "Write out every event with its timestamp and calculate the total elapsed time. The compressed timeline is one of Scattered Spider's most dangerous characteristics."
+  },
+  {
+    "id": "ss_exec_06",
+    "phase": "execute",
+    "order": 9,
+    "question": "Is this a true positive? At what stage should incident response have been engaged and why?",
+    "requires_spl": false,
+    "expected_elements": [
+      "definitive true positive conclusion",
+      "earliest viable detection point identified",
+      "MFA reset + new device sign-in cited as trigger",
+      "escalation point justified",
+      "urgency of response characterised"
+    ],
+    "guidance": "This isn't just a true positive question — it's also an incident response readiness question. Given the compressed timeline, identify the earliest point at which IR should have been engaged. The MFA reset + immediate new-device sign-in combination should have been the trigger — everything that followed was preventable if that was caught in real time.",
+    "model_answer": "True positive — confirmed. IR should have been engaged at T+0:05 when the first sign-in from a new device occurred minutes after an MFA reset. That combination — helpdesk MFA reset followed immediately by new-device authentication — is the Scattered Spider signature. Every subsequent action (CA policy disabled, GA account added, AnyDesk deployed, shadow copies deleted) was preventable if IR had been engaged at that point. Evidence supporting true positive: (1) MFA reset immediately followed by new-device sign-in; (2) CA policy disabled by the same account; (3) New GA account added within 11 minutes; (4) AnyDesk deployed from non-standard path; (5) vssadmin delete shadows across multiple hosts simultaneously. No legitimate scenario explains this combination.",
+    "hint_context": "Given that Scattered Spider can go from access to ransomware in under 3 hours, at what point in your timeline could IR have actually stopped the attack? That's the escalation point."
+  },
+  {
+    "id": "ss_report_01",
+    "phase": "report",
+    "order": 10,
+    "question": "What is the confirmed scope of the intrusion? What systems are encrypted or at risk and what data may have been exfiltrated?",
+    "requires_spl": false,
+    "expected_elements": [
+      "compromised admin account identified",
+      "GA backdoor account identified",
+      "endpoints with AnyDesk identified",
+      "systems with shadow copies deleted noted",
+      "data exfiltration risk assessed"
+    ],
+    "guidance": "Scope the intrusion across identity (Azure AD), endpoints (AnyDesk deployed), and data (what did they access before deploying ransomware). Scattered Spider often exfiltrates data for double extortion before encrypting — check for large data transfers or O365 bulk download activity.",
+    "model_answer": "Confirmed scope: (1) Identity — compromised admin account and backdoor GA account (svc-helpdesk) with active sessions; (2) Conditional access — MFA requirement disabled for all users — entire tenant is MFA-free until restored; (3) Endpoints — AnyDesk deployed on [N] hosts, all with shadow copies deleted and backup services stopped; (4) Data exfiltration risk — O365 audit shows bulk MailItemsAccessed and SharePoint download activity prior to ransomware preparation, suggesting double extortion data theft; (5) Ransomware status — either imminent or underway depending on investigation timing. The backdoor GA account remains active and has full tenant control.",
+    "hint_context": "Scattered Spider often does double extortion — they steal data before encrypting. Check O365 logs for bulk data access before the ransomware preparation stage."
+  },
+  {
+    "id": "ss_report_02",
+    "phase": "report",
+    "order": 11,
+    "question": "Map all confirmed activity to MITRE ATT&CK techniques including the social engineering and ransomware-specific techniques.",
+    "requires_spl": false,
+    "expected_elements": [
+      "T1621 MFA Request Generation referenced",
+      "T1078 Valid Accounts referenced",
+      "T1556.006 Modify Authentication Process referenced",
+      "T1098 Account Manipulation referenced",
+      "T1219 Remote Access Software referenced",
+      "T1490 Inhibit System Recovery referenced",
+      "T1486 Data Encrypted for Impact referenced"
+    ],
+    "guidance": "Scattered Spider uses several identity-specific and ransomware-specific techniques. Make sure to include the social engineering technique and the ransomware preparation techniques alongside the identity abuse techniques.",
+    "model_answer": "T1566 Phishing / Social Engineering — helpdesk impersonation for MFA reset; T1621 Multi-Factor Authentication Request Generation — MFA fatigue if used; T1078 Valid Accounts — compromised admin credentials; T1556.006 Modify Authentication Process: Conditional Access Policies — CA policy disabled; T1098 Account Manipulation — GA backdoor account created; T1219 Remote Access Software — AnyDesk deployed for persistent access; T1059.001 PowerShell — execution chain for deployment; T1021.002 SMB/Windows Admin Shares — lateral movement for AnyDesk deployment; T1490 Inhibit System Recovery — shadow copies deleted, backups stopped; T1486 Data Encrypted for Impact — ransomware deployment; T1041 Exfiltration Over C2 — data theft for double extortion.",
+    "hint_context": "Cover the full chain from identity attack through to ransomware. T1490 and T1486 are the ransomware-specific techniques that distinguish Scattered Spider from pure identity threat actors."
+  },
+  {
+    "id": "ss_report_03",
+    "phase": "report",
+    "order": 12,
+    "question": "What visibility gaps allowed this attack to progress so far? What real-time detections would have stopped it?",
+    "requires_spl": false,
+    "expected_elements": [
+      "MFA reset alerting gap mentioned",
+      "new device sign-in alerting gap mentioned",
+      "CA policy change alerting mentioned",
+      "real-time response capability gap noted",
+      "helpdesk verification process gap mentioned"
+    ],
+    "guidance": "The core gap is the absence of real-time alerting on the MFA reset + new device sign-in combination. Every subsequent stage was preventable. Also consider the helpdesk process gap — what verification should have been done before resetting MFA?",
+    "model_answer": "Critical gaps: (1) No real-time alert on MFA reset followed by immediate new-device sign-in — this combination should trigger an automatic account lock and IR page; (2) No alert on conditional access policy modifications — these should require a separate approval workflow; (3) No alert on new Global Administrator additions outside change windows; (4) Helpdesk verification process — MFA reset should require manager callback or identity verification beyond caller knowledge; (5) No real-time SOAR response to shadow copy deletion — by the time this was detected manually, ransomware was imminent. Detection improvements: implement Azure AD Identity Protection with automatic response policies; configure PIM for Global Administrator with approval workflow; implement vssadmin/bcdedit alert with automated host isolation.",
+    "hint_context": "At what point could automation have stopped this? The MFA reset + new device sign-in is detectable in real time. What would have happened if an automated response had locked the account at T+0:05?"
+  },
+  {
+    "id": "ss_report_04",
+    "phase": "report",
+    "order": 13,
+    "question": "Write an SPL detection query for the Scattered Spider helpdesk MFA reset signature. Explain the logic and the automated response that should accompany it.",
+    "requires_spl": true,
+    "expected_elements": [
+      "azure:aad:audit MFA change detected",
+      "azure:aad:signin new device correlated",
+      "time window for correlation defined",
+      "automated response described",
+      "false positive considerations mentioned"
+    ],
+    "guidance": "The detection needs to correlate two events: an MFA method change in Azure AD audit logs followed within a short window by a sign-in from a new device. Use Splunk's join or transaction commands to correlate across sourcetypes. The automated response should include account suspension and an IR page.",
+    "model_answer": "SPL: index=* sourcetype=\"azure:aad:audit\" (operationName=\"Update user\" OR operationName=\"Update Authentication methods\") | rename properties.targetResources{}.userPrincipalName as affected_user | join type=inner affected_user [search index=* sourcetype=\"azure:aad:signin\" | where relative_time(strptime('properties.time', \"%Y-%m-%dT%H:%M:%SZ\"), \"+30m\") > now() | rename properties.userPrincipalName as affected_user | eval new_device=if(isnull(properties.deviceDetail.deviceId), \"unknown\", properties.deviceDetail.deviceId)] | where new_device!=\"known_device_ids\" | table _time, affected_user, new_device, properties.ipAddress\n\nLogic: Correlates MFA method changes with sign-ins from new devices within 30 minutes.\n\nAutomated response: Trigger SOAR playbook to (1) suspend affected account, (2) revoke all sessions, (3) page on-call IR. False positives: legitimate new device enrollments after MFA reset — tune with known device whitelist.",
+    "hint_context": "The detection needs two events correlated in time: MFA change then new device sign-in. How would you use Splunk to link these across two different sourcetypes?"
+  },
+  {
+    "id": "ss_report_05",
+    "phase": "report",
+    "order": 14,
+    "question": "What are your recommended immediate containment actions? Given the compressed timeline, what must happen in the first 30 minutes of IR engagement?",
+    "requires_spl": false,
+    "expected_elements": [
+      "backdoor GA account removal as first priority",
+      "conditional access policy restoration",
+      "AnyDesk removal from all endpoints",
+      "compromised account session revocation",
+      "network segmentation or isolation mentioned",
+      "30-minute action plan articulated"
+    ],
+    "guidance": "Given Scattered Spider's speed, IR must work to a 30-minute action plan. Prioritise stopping ongoing access before investigating. The backdoor GA account must be removed first — it has full tenant control. Then restore CA policies to prevent further MFA-free access.",
+    "model_answer": "30-minute IR action plan: Minutes 0-5 — (1) Remove backdoor GA account (svc-helpdesk) from Global Administrator role and disable account — this is the highest priority; (2) Revoke all sessions for compromised admin account (Revoke-AzureADUserAllRefreshToken). Minutes 5-15 — (3) Restore conditional access policy 'Require MFA for All Users' to enabled; (4) Identify all endpoints with AnyDesk and begin isolation; (5) Pause file server access pending assessment. Minutes 15-30 — (6) Assess ransomware deployment status across all endpoints; (7) Isolate any endpoints showing encryption activity; (8) Contact backup provider to assess backup integrity; (9) Brief senior management on status. Parallel workstream: legal/comms team briefed on potential ransomware and data breach notification obligations.",
+    "hint_context": "In a Scattered Spider incident, every minute matters. What absolutely must happen in the first 30 minutes to limit the blast radius? Prioritise stopping access over investigation."
+  }
+]

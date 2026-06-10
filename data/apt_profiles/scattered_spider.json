@@ -1,0 +1,14 @@
+{
+  "id": "scattered_spider",
+  "display_name": "Scattered Spider",
+  "attribution": "English-speaking cybercriminal collective — likely Western",
+  "motivation": "Financial — ransomware deployment, data theft, and extortion",
+  "description": "Scattered Spider is a sophisticated cybercriminal group known for social engineering helpdesks to reset MFA, SIM swapping, and Azure AD identity attacks. They are highly effective at bypassing MFA and gaining Global Administrator access before deploying ransomware or exfiltrating sensitive data.",
+  "correct_ttps": [
+    "T1621", "T1078", "T1556.006", "T1098", "T1219",
+    "T1486", "T1041", "T1059.001", "T1071.001", "T1538"
+  ],
+  "data_sources": ["azure:aad:signin", "azure:aad:audit", "Sysmon", "WinEventLog:Security", "o365:management"],
+  "difficulty": "hard",
+  "tags": ["social-engineering", "mfa-bypass", "azure-ad", "ransomware", "identity-attack"]
+}

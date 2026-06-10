@@ -1,0 +1,14 @@
+{
+  "id": "apt35",
+  "display_name": "APT35 (Charming Kitten)",
+  "attribution": "Iran — Islamic Revolutionary Guard Corps (IRGC)",
+  "motivation": "Espionage — targeting academics, journalists, government officials, and defence sector",
+  "description": "APT35 is an Iranian state-sponsored threat actor known for sophisticated phishing campaigns targeting Microsoft 365 and Exchange environments. They use credential harvesting pages, OAuth token theft, and persistent mailbox access to conduct long-term espionage operations.",
+  "correct_ttps": [
+    "T1566.002", "T1078", "T1114.002", "T1556.006", "T1098.002",
+    "T1059.001", "T1071.001", "T1003.001", "T1547.001", "T1041"
+  ],
+  "data_sources": ["o365:management", "azure:aad:signin", "azure:aad:audit", "Sysmon", "WinEventLog:Security"],
+  "difficulty": "medium",
+  "tags": ["phishing", "m365", "credential-theft", "email-exfiltration"]
+}
