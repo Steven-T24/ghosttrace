@@ -11,4 +11,5 @@
   "data_sources": ["o365:management", "azure:aad:signin", "azure:aad:audit", "Sysmon", "WinEventLog:Security"],
   "difficulty": "medium",
   "tags": ["phishing", "m365", "credential-theft", "email-exfiltration"]
+  "primary_environment": ["Azure AD", "M365/Exchange", "Endpoint"]
 }

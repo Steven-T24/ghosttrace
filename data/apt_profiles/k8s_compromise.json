@@ -11,4 +11,5 @@
   "data_sources": ["kubernetes:audit", "container:runtime", "aws:cloudtrail", "Sysmon"],
   "difficulty": "hard",
   "tags": ["kubernetes", "containers", "rbac-abuse", "cryptomining", "secrets-theft", "k8s"]
+  "primary_environment": ["Kubernetes", "AWS", "Container Runtime"]
 }

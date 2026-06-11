@@ -11,4 +11,5 @@
   "data_sources": ["oci:audit", "oci:objectstorage", "oci:identity", "Sysmon", "WinEventLog:Security"],
   "difficulty": "medium",
   "tags": ["oracle-cloud", "oci", "iam-abuse", "data-exfiltration", "api-keys"]
+  "primary_environment": ["Oracle Cloud (OCI)"]
 }
