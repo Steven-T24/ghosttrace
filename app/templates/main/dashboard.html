@@ -13,8 +13,38 @@
   transition: border-color 0.2s;
 }
 .apt-card:hover { border-color: var(--cyan-dim); }
-.apt-card-body { flex: 1; }
-.apt-card-footer { margin-top: 1rem; }
+.apt-card-body { flex:1; display:flex; flex-direction:column; }
+.apt-card-footer { margin-top:1rem; }
+.apt-attribution {
+  font-family:'Share Tech Mono',monospace; font-size:0.58rem; color:var(--grey);
+  letter-spacing:0.08em; text-transform:uppercase;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  margin-bottom:0.3rem; min-height:1.1em;
+}
+.apt-name {
+  font-family:'Rajdhani',sans-serif; font-size:1.25rem; font-weight:700;
+  color:var(--cyan); margin:0 0 0.5rem 0; min-height:2rem;
+}
+.apt-desc {
+  font-size:0.8rem; color:var(--grey); margin-bottom:0.6rem; flex:1;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+}
+.apt-tags { margin-bottom:0.6rem; min-height:1.6rem; }
+.apt-mode-info {
+  display:grid; grid-template-columns:1fr 1fr; gap:0.35rem;
+  font-family:'Share Tech Mono',monospace; font-size:0.58rem; color:var(--grey);
+  margin-bottom:0.5rem;
+}
+.mode-toggle { display:flex; gap:0.5rem; margin-bottom:0.6rem; }
+.mode-btn {
+  flex:1; padding:0.35rem 0.5rem; font-family:'Share Tech Mono',monospace;
+  font-size:0.63rem; letter-spacing:0.1em; border:1px solid var(--border);
+  background:var(--navy-mid); color:var(--grey); cursor:pointer;
+  transition:all 0.15s; text-align:center;
+}
+.mode-btn.active-normal { border-color:var(--cyan); color:var(--cyan); background:rgba(0,212,255,0.08); }
+.mode-btn.active-brutal { border-color:var(--red); color:var(--red); background:rgba(255,50,50,0.08); }
+.card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:1.25rem; align-items:stretch; }
 </style>
 {% endblock %}
 {% block content %}
@@ -23,7 +53,7 @@
     <div>
       <div class="label">// Threat Hunting Platform</div>
       <h1>GHOSTTRACE</h1>
-      <p>Select an adversary group to begin a structured threat hunt.</p>
+      <p>Select an adversary group and difficulty to begin a structured threat hunt.</p>
     </div>
     <div style="text-align:right;">
       <div class="label">Analyst</div>
@@ -39,6 +69,7 @@
     <div class="label">// Active Hunt</div>
     <strong style="color:var(--white);">{{ active_hunt.apt_name }}</strong> —
     <span style="color:var(--orange);font-family:'Share Tech Mono',monospace;">{{ active_hunt.status.upper() }}</span>
+    <span style="font-family:'Share Tech Mono',monospace;font-size:0.65rem;color:var(--grey);margin-left:0.75rem;">[{{ (active_hunt.mode or 'normal').upper() }} MODE]</span>
     {% if active_hunt.status == 'research' %}
       <a href="{{ url_for('hunt.research', session_id=active_hunt.id) }}" class="btn btn-secondary" style="margin-left:1rem;padding:0.3rem 0.85rem;font-size:0.72rem;">Continue →</a>
     {% elif active_hunt.status == 'ingestion' %}
@@ -55,19 +86,32 @@
   <div class="card-grid">
     {% for p in profiles %}
     <div class="apt-card">
+      <div style="position:absolute;top:0;right:0;font-family:'Share Tech Mono',monospace;font-size:3rem;color:rgba(0,212,255,0.03);line-height:1;pointer-events:none;padding:0.5rem;">{{ loop.index }}</div>
       <div class="apt-card-body">
-        <div style="position:absolute;top:0;right:0;font-family:'Share Tech Mono',monospace;font-size:3rem;color:rgba(0,212,255,0.03);line-height:1;pointer-events:none;padding:0.5rem;">{{ p.display_name }}</div>
-        <div class="label">{{ p.attribution }} // {{ p.motivation }}</div>
-        <div style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--cyan);margin:0.3rem 0;">{{ p.display_name }}</div>
-        <p style="font-size:0.82rem;margin-bottom:0.75rem;">{{ p.description[:120] }}...</p>
-        <div style="margin-bottom:0.5rem;">
+        <div class="apt-attribution">{{ p.attribution }} // {{ p.motivation }}</div>
+        <div class="apt-name">{{ p.display_name }}</div>
+        <div class="apt-desc">{{ p.description }}</div>
+        <div class="apt-tags">
           {% for env in p.primary_environment %}
-          <span style="font-family:'Share Tech Mono',monospace;font-size:0.6rem;color:var(--orange);border:1px solid rgba(255,105,0,0.4);padding:0.15rem 0.5rem;margin-right:0.3rem;">{{ env }}</span>
+          <span style="font-family:'Share Tech Mono',monospace;font-size:0.58rem;color:var(--orange);border:1px solid rgba(255,105,0,0.4);padding:0.12rem 0.45rem;margin-right:0.25rem;margin-bottom:0.25rem;display:inline-block;">{{ env }}</span>
           {% endfor %}
+        </div>
+        <div class="apt-mode-info">
+          <div style="border:1px solid rgba(0,212,255,0.2);padding:0.3rem 0.5rem;">
+            <span style="color:var(--cyan);">NORMAL</span><br>~200 events · guided
+          </div>
+          <div style="border:1px solid rgba(255,50,50,0.2);padding:0.3rem 0.5rem;">
+            <span style="color:var(--red);">BRUTAL</span><br>~1000 events · no hints
+          </div>
         </div>
       </div>
       <div class="apt-card-footer">
-        <form method="POST" action="{{ url_for('hunt.start', apt_id=p.id) }}">
+        <form method="POST" action="{{ url_for('hunt.start', apt_id=p.id) }}" id="form-{{ p.id }}">
+          <input type="hidden" name="mode" id="mode-{{ p.id }}" value="normal">
+          <div class="mode-toggle">
+            <div class="mode-btn active-normal" id="btn-normal-{{ p.id }}" onclick="setMode('{{ p.id }}','normal')">// NORMAL</div>
+            <div class="mode-btn" id="btn-brutal-{{ p.id }}" onclick="setMode('{{ p.id }}','brutal')">// BRUTAL</div>
+          </div>
           <button type="submit" class="btn btn-primary" style="width:100%;">Begin Hunt</button>
         </form>
       </div>
@@ -79,12 +123,18 @@
   <h2 style="margin-top:3rem;">Completed Hunts</h2>
   <table>
     <thead>
-      <tr><th>APT Group</th><th>Completed</th><th>Overall Score</th><th>Grade</th><th>Actions</th></tr>
+      <tr><th>APT Group</th><th>Mode</th><th>Completed</th><th>Overall Score</th><th>Grade</th><th>Actions</th></tr>
     </thead>
     <tbody>
       {% for h in completed_hunts %}
       <tr>
         <td><span class="mono">{{ h.apt_name }}</span></td>
+        <td>
+          <span style="font-family:'Share Tech Mono',monospace;font-size:0.65rem;
+            color:{% if (h.mode or 'normal') == 'brutal' %}var(--red){% else %}var(--cyan){% endif %};">
+            {{ (h.mode or 'normal').upper() }}
+          </span>
+        </td>
         <td style="color:var(--grey);font-size:0.82rem;">{{ h.completed_at.strftime('%Y-%m-%d %H:%M') if h.completed_at else '—' }}</td>
         <td>
           {% if h.overall_score %}
@@ -93,8 +143,9 @@
           </span>
           {% else %}—{% endif %}
         </td>
-        <td style="font-family:'Rajdhani',sans-serif;font-weight:600;font-size:0.9rem;">
-          {{ h.overall_feedback[:20] if h.overall_feedback else '—' }}
+        <td style="font-family:'Rajdhani',sans-serif;font-weight:600;font-size:0.9rem;
+          color:{% if h.grade == 'Excellent' %}var(--green){% elif h.grade == 'Good' %}var(--cyan){% elif h.grade == 'Developing' %}var(--orange){% else %}var(--red){% endif %};">
+          {{ h.grade or '—' }}
         </td>
         <td>
           <a href="{{ url_for('hunt.export', session_id=h.id) }}" class="btn btn-secondary" style="padding:0.25rem 0.75rem;font-size:0.7rem;">Export</a>
@@ -105,4 +156,15 @@
   </table>
   {% endif %}
 </div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function setMode(aptId, mode) {
+  document.getElementById('mode-' + aptId).value = mode;
+  const btnNormal = document.getElementById('btn-normal-' + aptId);
+  const btnBrutal = document.getElementById('btn-brutal-' + aptId);
+  btnNormal.className = 'mode-btn' + (mode === 'normal' ? ' active-normal' : '');
+  btnBrutal.className = 'mode-btn' + (mode === 'brutal' ? ' active-brutal' : '');
+}
+</script>
 {% endblock %}
