@@ -10,6 +10,6 @@
   ],
   "data_sources": ["azure:aad:signin", "azure:aad:audit", "Sysmon", "WinEventLog:Security", "o365:management"],
   "difficulty": "hard",
-  "tags": ["social-engineering", "mfa-bypass", "azure-ad", "ransomware", "identity-attack"]
+  "tags": ["social-engineering", "mfa-bypass", "azure-ad", "ransomware", "identity-attack"],
   "primary_environment": ["Azure AD", "Endpoint"]
 }

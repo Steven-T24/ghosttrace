@@ -10,6 +10,6 @@
   ],
   "data_sources": ["api:gateway", "oauth:audit", "azure:aad:signin", "aws:cloudtrail", "Sysmon"],
   "difficulty": "hard",
-  "tags": ["api-abuse", "oauth", "bearer-token", "rest-api", "token-theft"]
+  "tags": ["api-abuse", "oauth", "bearer-token", "rest-api", "token-theft"],
   "primary_environment": ["REST API", "OAuth"]
 }

@@ -10,6 +10,6 @@
   ],
   "data_sources": ["aws:cloudtrail", "azure:aad:audit", "Sysmon", "WinEventLog:Security", "WinEventLog:Microsoft-Windows-PowerShell/Operational"],
   "difficulty": "hard",
-  "tags": ["msp", "supply-chain", "multi-cloud", "lateral-movement", "trusted-relationship"]}
+  "tags": ["msp", "supply-chain", "multi-cloud", "lateral-movement", "trusted-relationship"],
   "primary_environment": ["AWS", "Azure", "Endpoint", "MSP"]
 }
