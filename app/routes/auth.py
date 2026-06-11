@@ -41,7 +41,7 @@ def register():
         if User.query.filter_by(email=email).first():
             flash('Email already registered.', 'error')
             return render_template('auth/register.html')
-        hashed = bcrypt.generate_password_hash(password).decode('utf-8')
+        hashed = bcrypt.generate_password_hash(password[:72]).decode('utf-8')
         user = User(username=username, email=email, password=hashed, password_changed=True)
         db.session.add(user)
         db.session.commit()
